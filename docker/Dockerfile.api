@@ -1,0 +1,39 @@
+FROM node:20-alpine AS base
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+WORKDIR /app
+
+# Install dependencies
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY apps/api/package.json ./apps/api/
+COPY packages/shared/package.json ./packages/shared/
+
+RUN pnpm install --frozen-lockfile --prod=false
+
+# Copy source
+COPY packages/shared ./packages/shared
+COPY apps/api ./apps/api
+
+# Generate Prisma client
+RUN pnpm --filter @tradesim/api prisma generate
+
+# Build
+RUN pnpm --filter @tradesim/api build
+
+# Production stage
+FROM node:20-alpine AS production
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+WORKDIR /app
+
+COPY --from=base /app/node_modules ./node_modules
+COPY --from=base /app/apps/api/dist ./apps/api/dist
+COPY --from=base /app/apps/api/node_modules ./apps/api/node_modules
+COPY --from=base /app/apps/api/prisma ./apps/api/prisma
+COPY --from=base /app/apps/api/package.json ./apps/api/package.json
+COPY --from=base /app/packages/shared ./packages/shared
+
+ENV NODE_ENV=production
+EXPOSE 3001
+
+CMD ["node", "apps/api/dist/main.js"]

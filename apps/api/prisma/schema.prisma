@@ -1,0 +1,459 @@
+// ============================================================
+// TradeSim — Production Prisma Schema
+// Phase 3: Complete Database Architecture
+//
+// Design principles:
+//   1. Immutable ledger for all balance mutations
+//   2. MarketSymbol as master data (FK target)
+//   3. Write-normalize, read-denormalize (symbol strings)
+//   4. Pessimistic locking for balance, optimistic for values
+//   5. Soft-delete where audit trail matters
+//   6. Decimal(14,2) for financial values, (14,4) for prices
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum Exchange {
+  NSE
+  BSE
+}
+
+enum InstrumentType {
+  EQUITY
+  INDEX
+  ETF
+  FUTURES
+  OPTIONS
+}
+
+enum OrderSide {
+  BUY
+  SELL
+}
+
+enum OrderType {
+  MARKET
+  LIMIT
+  STOP_LOSS
+}
+
+enum OrderStatus {
+  PENDING
+  EXECUTED
+  PARTIALLY_FILLED
+  CANCELLED
+  FAILED
+  EXPIRED
+}
+
+enum LedgerType {
+  CREDIT
+  DEBIT
+}
+
+enum LedgerCategory {
+  SIGNUP_BONUS
+  REFERRAL_BONUS
+  PURCHASE_TOPUP
+  BUY_ORDER
+  SELL_ORDER
+  ADMIN_ADJUSTMENT
+}
+
+enum ReferralStatus {
+  PENDING
+  COMPLETED
+  EXPIRED
+}
+
+enum PaymentStatus {
+  CREATED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+// ============================================================
+// USER & AUTH
+// ============================================================
+
+/// Core user identity. Soft-deleted for regulatory audit retention.
+model User {
+  id           String    @id @default(uuid())
+  phone        String    @unique
+  name         String?
+  avatarUrl    String?   @map("avatar_url")
+  referralCode String    @unique @map("referral_code")
+  state        String?
+  city         String?
+  isActive     Boolean   @default(true) @map("is_active")
+  firebaseUid  String?   @unique @map("firebase_uid")
+  lastLoginAt  DateTime? @map("last_login_at")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  portfolio              Portfolio?
+  orders                 Order[]
+  ledgerEntries          LedgerEntry[]
+  watchlists             Watchlist[]
+  referralsMade          Referral[]               @relation("ReferralsMade")
+  referralsReceived      Referral?                @relation("ReferralsReceived")
+  payments               Payment[]
+  sessions               Session[]
+  portfolioDailySnapshots PortfolioDailySnapshot[]
+
+  @@index([phone])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+/// Device session for refresh token rotation and device management.
+model Session {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  refreshToken String   @unique @map("refresh_token")
+  userAgent    String?  @map("user_agent")
+  ipAddress    String?  @map("ip_address")
+  lastUsedAt   DateTime @default(now()) @map("last_used_at")
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ============================================================
+// MARKET INSTRUMENTS
+// ============================================================
+
+/// Master table for tradeable instruments.
+/// All orders, holdings, and watchlist items reference this via FK.
+/// Denormalized symbol strings are kept on child models for read performance.
+model MarketSymbol {
+  id             String         @id @default(uuid())
+  symbol         String
+  exchange       Exchange       @default(NSE)
+  instrumentType InstrumentType @default(EQUITY) @map("instrument_type")
+  companyName    String         @map("company_name")
+  isin           String?
+  sector         String?
+  industry       String?
+  lotSize        Int            @default(1) @map("lot_size")
+  tickSize       Decimal        @default(0.05) @map("tick_size") @db.Decimal(8, 4)
+  isActive       Boolean        @default(true) @map("is_active")
+  lastSyncedAt   DateTime?      @map("last_synced_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  // Relations
+  orders         Order[]
+  holdings       Holding[]
+  watchlistItems WatchlistItem[]
+
+  @@unique([symbol, exchange])
+  @@index([symbol])
+  @@index([isActive])
+  @@index([sector])
+  @@index([instrumentType])
+  @@map("market_symbols")
+}
+
+/// Cache freshness tracking for market data.
+model MarketCacheMetadata {
+  id           String   @id @default(uuid())
+  cacheKey     String   @unique @map("cache_key")
+  lastFetched  DateTime @map("last_fetched")
+  ttlSeconds   Int      @map("ttl_seconds")
+  source       String
+  hitCount     Int      @default(0) @map("hit_count")
+  lastHitAt    DateTime? @map("last_hit_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([cacheKey])
+  @@map("market_cache_metadata")
+}
+
+// ============================================================
+// PORTFOLIO & HOLDINGS
+// ============================================================
+
+/// Real-time portfolio state. Balance is a materialized cache of the ledger.
+/// Uses optimistic locking (version) for WebSocket price-tick updates.
+/// Balance mutations use pessimistic locking (SELECT FOR UPDATE via ledger repo).
+model Portfolio {
+  id               String    @id @default(uuid())
+  userId           String    @unique @map("user_id")
+  balance          Decimal   @default(0) @db.Decimal(14, 2)
+  investedValue    Decimal   @default(0) @map("invested_value") @db.Decimal(14, 2)
+  currentValue     Decimal   @default(0) @map("current_value") @db.Decimal(14, 2)
+  totalPnl         Decimal   @default(0) @map("total_pnl") @db.Decimal(14, 2)
+  totalPnlPercent  Decimal   @default(0) @map("total_pnl_percent") @db.Decimal(10, 4)
+  dayPnl           Decimal   @default(0) @map("day_pnl") @db.Decimal(14, 2)
+  dayPnlPercent    Decimal   @default(0) @map("day_pnl_percent") @db.Decimal(10, 4)
+  version          Int       @default(0)
+  lastReconciledAt DateTime? @map("last_reconciled_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  holdings Holding[]
+
+  @@map("portfolios")
+}
+
+/// Individual stock position within a portfolio.
+/// Uses symbolId FK for integrity + denormalized symbol/companyName for reads.
+/// closedAt != null means position is fully sold (quantity = 0).
+model Holding {
+  id            String    @id @default(uuid())
+  portfolioId   String    @map("portfolio_id")
+  symbolId      String    @map("symbol_id")
+  symbol        String
+  companyName   String    @map("company_name")
+  exchange      Exchange  @default(NSE)
+  quantity      Int
+  avgBuyPrice   Decimal   @map("avg_buy_price") @db.Decimal(14, 4)
+  totalBuyValue Decimal   @map("total_buy_value") @db.Decimal(14, 2)
+  closedAt      DateTime? @map("closed_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  portfolio    Portfolio    @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  marketSymbol MarketSymbol @relation(fields: [symbolId], references: [id])
+
+  @@unique([portfolioId, symbolId])
+  @@index([symbolId])
+  @@index([symbol])
+  @@index([closedAt])
+  @@map("holdings")
+}
+
+// ============================================================
+// ORDERS
+// ============================================================
+
+/// Trade order placed by a user.
+/// Orders are IMMUTABLE after execution — never updated, only status transitions.
+/// Uses symbolId FK + denormalized symbol/companyName for read performance.
+model Order {
+  id              String      @id @default(uuid())
+  userId          String      @map("user_id")
+  symbolId        String      @map("symbol_id")
+  symbol          String
+  companyName     String      @map("company_name")
+  exchange        Exchange    @default(NSE)
+  side            OrderSide
+  type            OrderType   @default(MARKET)
+  quantity        Int
+  filledQuantity  Int         @default(0) @map("filled_quantity")
+  price           Decimal     @db.Decimal(14, 4)
+  totalValue      Decimal     @map("total_value") @db.Decimal(14, 2)
+  status          OrderStatus @default(PENDING)
+  executedAt      DateTime?   @map("executed_at")
+  cancelledAt     DateTime?   @map("cancelled_at")
+  expiresAt       DateTime?   @map("expires_at")
+  failureReason   String?     @map("failure_reason")
+  createdAt       DateTime    @default(now()) @map("created_at")
+
+  // Relations
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  marketSymbol  MarketSymbol  @relation(fields: [symbolId], references: [id])
+  ledgerEntries LedgerEntry[]
+
+  // Note: no updatedAt — orders transition through statuses but fields are append-only
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, status])
+  @@index([symbolId, status])
+  @@index([status, createdAt(sort: Desc)])
+  @@map("orders")
+}
+
+// ============================================================
+// LEDGER (Immutable Transaction Log)
+// ============================================================
+
+/// Append-only, immutable ledger entry for every balance mutation.
+///
+/// Rules:
+///   1. NEVER update a LedgerEntry after creation
+///   2. NEVER delete a LedgerEntry
+///   3. Every balance change creates exactly one entry
+///   4. runningBalance acts as a checksum
+///   5. portfolio.balance is a materialized cache of the latest runningBalance
+///
+/// amount is ALWAYS positive. entryType (CREDIT/DEBIT) determines direction.
+model LedgerEntry {
+  id             String         @id @default(uuid())
+  userId         String         @map("user_id")
+  entryType      LedgerType     @map("entry_type")
+  category       LedgerCategory
+  amount         Decimal        @db.Decimal(14, 2)
+  runningBalance Decimal        @map("running_balance") @db.Decimal(14, 2)
+
+  // Idempotency — prevents duplicate entries on transaction retry.
+  // Caller generates a deterministic key (e.g. "buy_order_{orderId}")
+  // before the DB transaction. If a retry creates a second entry with
+  // the same key, the unique constraint rejects it.
+  idempotencyKey String?        @unique @map("idempotency_key")
+
+  // Correlation — exactly one should be set per business operation
+  orderId        String?        @map("order_id")
+  paymentId      String?        @map("payment_id")
+  referralId     String?        @map("referral_id")
+
+  description    String
+  metadata       Json?
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  // Relations
+  user     User      @relation(fields: [userId], references: [id])
+  order    Order?    @relation(fields: [orderId], references: [id])
+  payment  Payment?  @relation(fields: [paymentId], references: [id])
+  referral Referral? @relation(fields: [referralId], references: [id])
+
+  // CRITICAL: No updatedAt — entries are immutable
+  // CRITICAL: No deletedAt — entries are never removed
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([orderId])
+  @@index([paymentId])
+  @@index([referralId])
+  @@index([category, createdAt(sort: Desc)])
+  @@map("ledger_entries")
+}
+
+// ============================================================
+// WATCHLISTS
+// ============================================================
+
+model Watchlist {
+  id        String          @id @default(uuid())
+  userId    String          @map("user_id")
+  name      String
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items WatchlistItem[]
+
+  @@index([userId])
+  @@map("watchlists")
+}
+
+model WatchlistItem {
+  id          String   @id @default(uuid())
+  watchlistId String   @map("watchlist_id")
+  symbolId    String   @map("symbol_id")
+  symbol      String
+  companyName String   @map("company_name")
+  addedAt     DateTime @default(now()) @map("added_at")
+
+  watchlist    Watchlist    @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+  marketSymbol MarketSymbol @relation(fields: [symbolId], references: [id])
+
+  @@unique([watchlistId, symbolId])
+  @@index([symbolId])
+  @@map("watchlist_items")
+}
+
+// ============================================================
+// REFERRALS
+// ============================================================
+
+model Referral {
+  id             String         @id @default(uuid())
+  referrerId     String         @map("referrer_id")
+  referredUserId String         @unique @map("referred_user_id")
+  status         ReferralStatus @default(PENDING)
+  completedAt    DateTime?      @map("completed_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  referrer      User          @relation("ReferralsMade", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredUser  User          @relation("ReferralsReceived", fields: [referredUserId], references: [id], onDelete: Cascade)
+  ledgerEntries LedgerEntry[]
+
+  @@index([referrerId])
+  @@map("referrals")
+}
+
+// ============================================================
+// PAYMENTS
+// ============================================================
+
+model Payment {
+  id                 String        @id @default(uuid())
+  userId             String        @map("user_id")
+  razorpayOrderId    String        @unique @map("razorpay_order_id")
+  razorpayPaymentId  String?       @map("razorpay_payment_id")
+  amount             Decimal       @db.Decimal(10, 2)
+  currency           String        @default("INR")
+  status             PaymentStatus @default(CREATED)
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ledgerEntries LedgerEntry[]
+
+  @@index([userId])
+  @@map("payments")
+}
+
+// ============================================================
+// PORTFOLIO DAILY SNAPSHOTS (for leaderboard + history)
+// ============================================================
+
+/// End-of-day snapshot of portfolio state.
+/// Immutable after creation — used for leaderboard ranking and P&L history charts.
+/// Created by EOD CRON job at market close (3:45 PM IST).
+model PortfolioDailySnapshot {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  snapshotDate    DateTime @map("snapshot_date") @db.Date
+
+  // Frozen portfolio values at EOD
+  balance         Decimal  @db.Decimal(14, 2)
+  investedValue   Decimal  @map("invested_value") @db.Decimal(14, 2)
+  currentValue    Decimal  @map("current_value") @db.Decimal(14, 2)
+  totalPnl        Decimal  @map("total_pnl") @db.Decimal(14, 2)
+  totalPnlPercent Decimal  @map("total_pnl_percent") @db.Decimal(10, 4)
+  dayPnl          Decimal  @map("day_pnl") @db.Decimal(14, 2)
+  dayPnlPercent   Decimal  @map("day_pnl_percent") @db.Decimal(10, 4)
+
+  // Trading metrics for leaderboard
+  totalTrades     Int      @default(0) @map("total_trades")
+  winningTrades   Int      @default(0) @map("winning_trades")
+  winRate         Decimal  @default(0) @map("win_rate") @db.Decimal(5, 2)
+
+  // Frozen holdings at EOD (JSON blob — not queried, only displayed)
+  holdingsSnapshot Json?   @map("holdings_snapshot")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  // CRITICAL: No updatedAt — snapshots are immutable
+
+  @@unique([userId, snapshotDate])
+  @@index([snapshotDate(sort: Desc), totalPnlPercent(sort: Desc)])
+  @@index([userId, snapshotDate(sort: Desc)])
+  @@map("portfolio_daily_snapshots")
+}

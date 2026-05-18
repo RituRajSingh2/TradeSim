@@ -1,0 +1,429 @@
+/* ============================================================
+   TradeSim Design System — Tailwind CSS v4
+   ============================================================
+   
+   Architecture:
+     1. @theme block → Tailwind v4 design tokens (compile-time)
+     2. :root block  → Runtime CSS variables (accessible to JS/components)
+     3. Base styles   → Reset + global defaults
+     4. Accessibility → reduced-motion, high-contrast
+     5. Utilities     → Glass, gradients, financial typography
+     6. Animations    → GPU-accelerated, motion-safe only
+     7. Responsive    → Breakpoint-specific token overrides
+   
+   Performance rules:
+     - All animations use transform/opacity only (GPU composited)
+     - backdrop-filter capped at 12px (perf-safe for mobile)
+     - will-change applied sparingly, only on actively animated elements
+     - Infinite animations are motion-safe gated
+     - Financial numbers use tabular-nums for stable-width rendering
+   ============================================================ */
+
+@import "tailwindcss";
+
+/* ============================================================
+   1. TAILWIND v4 THEME — Design Tokens (compile-time)
+   ============================================================ */
+
+@theme {
+  /* ---- Surface Colors (dark-first) ---- */
+  --color-bg-primary: #0A0A0B;
+  --color-bg-secondary: #111113;
+  --color-bg-tertiary: #1A1A1D;
+  --color-bg-card: #141416;
+  --color-bg-card-hover: #1C1C1F;
+  --color-bg-elevated: #1E1E21;
+
+  /* ---- Border Colors ---- */
+  --color-border-primary: #2A2A2E;
+  --color-border-secondary: #222225;
+  --color-border-subtle: #1A1A1D;
+
+  /* ---- Text Colors ---- */
+  --color-text-primary: #F5F5F7;
+  --color-text-secondary: #8E8E93;
+  --color-text-tertiary: #636366;
+  --color-text-muted: #48484A;
+
+  /* ---- Accent (Brand Green) ---- */
+  --color-accent: #00D09C;
+  --color-accent-hover: #00B386;
+  --color-accent-muted: rgba(0, 208, 156, 0.12);
+  --color-accent-subtle: rgba(0, 208, 156, 0.06);
+
+  /* ---- Semantic Colors ---- */
+  --color-positive: #00D09C;
+  --color-positive-bg: rgba(0, 208, 156, 0.1);
+  --color-negative: #FF3B30;
+  --color-negative-bg: rgba(255, 59, 48, 0.1);
+  --color-warning: #FF9500;
+  --color-warning-bg: rgba(255, 149, 0, 0.1);
+  --color-info: #5AC8FA;
+  --color-info-bg: rgba(90, 200, 250, 0.1);
+
+  /* ---- Typography ---- */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* ---- Spacing ---- */
+  --spacing-page: 1rem;
+  --spacing-section: 2rem;
+
+  /* ---- Border Radius ---- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* ---- Shadows ---- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 20px rgba(0, 208, 156, 0.15);
+
+  /* ---- Transitions ---- */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---- Z-Index Scale ---- */
+  --z-dropdown: 50;
+  --z-sticky: 100;
+  --z-fixed: 200;
+  --z-modal-backdrop: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+
+  /* ---- Container ---- */
+  --container-max: 1200px;
+
+  /* ---- Breakpoints ---- */
+  --breakpoint-xs: 375px;
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+}
+
+/* ============================================================
+   2. RUNTIME CSS VARIABLES — Accessible to JS/components
+   ============================================================
+   Tokens that components or JS might need at runtime.
+   The @theme block is compile-time only in Tailwind v4 —
+   these :root vars make critical values available to:
+     - Chart libraries (colors for candlesticks, P&L)
+     - Dynamic style calculations
+     - Third-party components that can't use Tailwind classes
+   ============================================================ */
+
+:root {
+  /* ---- Financial semantic colors (used by chart libs) ---- */
+  --ts-positive: #00D09C;
+  --ts-negative: #FF3B30;
+  --ts-warning: #FF9500;
+  --ts-accent: #00D09C;
+  --ts-accent-hover: #00B386;
+
+  /* ---- Surface colors (for chart backgrounds, tooltips) ---- */
+  --ts-bg: #0A0A0B;
+  --ts-bg-card: #141416;
+  --ts-bg-elevated: #1E1E21;
+  --ts-border: #2A2A2E;
+
+  /* ---- Text (for chart labels, axes) ---- */
+  --ts-text: #F5F5F7;
+  --ts-text-secondary: #8E8E93;
+  --ts-text-muted: #48484A;
+
+  /* ---- Glass blur budget ---- */
+  --ts-blur-light: 8px;
+  --ts-blur-standard: 12px;
+}
+
+/* ============================================================
+   3. BASE STYLES — Reset + Global Defaults
+   ============================================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+  /* Prevent layout shift from scrollbar appearance */
+  scrollbar-gutter: stable;
+}
+
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  min-height: 100dvh;
+}
+
+/* ---- Scrollbar ---- */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-primary);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+}
+
+/* ---- Selection ---- */
+
+::selection {
+  background-color: var(--color-accent-muted);
+  color: var(--color-accent);
+}
+
+/* ---- Focus Ring ---- */
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ---- Number Input Spinner Removal ---- */
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* ============================================================
+   4. ACCESSIBILITY
+   ============================================================ */
+
+/* Reduced motion: disable ALL animations and transitions.
+   Users with vestibular disorders need this.
+   Also improves perf on low-end devices that enable this. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================
+   5. FINANCIAL TYPOGRAPHY
+   ============================================================
+   tabular-nums: fixed-width digits so numbers don't jump on update
+   slashed-zero: distinguish 0 from O in financial context
+   These are CRITICAL for a trading app with real-time updates. */
+
+.font-financial {
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-feature-settings: 'tnum' 1, 'zero' 1;
+  letter-spacing: -0.01em;
+}
+
+/* Apply tabular numbers to all financial display contexts */
+[data-financial],
+.price,
+.pnl,
+.balance,
+.quantity {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* Monospace numbers for order book / depth display */
+.font-financial-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-feature-settings: 'tnum' 1, 'zero' 1;
+  font-size: 0.875rem;
+  letter-spacing: 0.02em;
+}
+
+/* ============================================================
+   6. UTILITY CLASSES
+   ============================================================ */
+
+/* ---- Glassmorphism ----
+   blur(12px) is the performance-safe maximum.
+   blur(20px)+ causes frame drops on:
+     - budget Android phones (Snapdragon 4xx)
+     - iPads rendering real-time charts
+     - any device during WebSocket price updates
+   
+   The visual difference between 12px and 20px is negligible
+   on dark backgrounds. */
+
+.glass {
+  background: rgba(20, 20, 22, 0.75);
+  backdrop-filter: blur(var(--ts-blur-standard));
+  -webkit-backdrop-filter: blur(var(--ts-blur-standard));
+  border: 1px solid var(--color-border-secondary);
+}
+
+.glass-strong {
+  background: rgba(20, 20, 22, 0.92);
+  backdrop-filter: blur(var(--ts-blur-standard));
+  -webkit-backdrop-filter: blur(var(--ts-blur-standard));
+  border: 1px solid var(--color-border-primary);
+}
+
+/* No-blur glass for contexts where blur is too expensive
+   (e.g., overlays on top of live charts) */
+.glass-flat {
+  background: rgba(20, 20, 22, 0.95);
+  border: 1px solid var(--color-border-primary);
+}
+
+/* ---- Gradient Text ---- */
+
+.gradient-text {
+  background: linear-gradient(135deg, var(--color-accent) 0%, #5AC8FA 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ---- Gradient Border ---- */
+
+.gradient-border {
+  position: relative;
+  background: var(--color-bg-card);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(0, 208, 156, 0.2), rgba(90, 200, 250, 0.1));
+}
+
+/* ---- P&L Color Utilities ---- */
+
+.text-positive { color: var(--color-positive); }
+.text-negative { color: var(--color-negative); }
+.bg-positive { background-color: var(--color-positive-bg); }
+.bg-negative { background-color: var(--color-negative-bg); }
+
+/* ============================================================
+   7. ANIMATIONS — GPU-Composited, Motion-Safe
+   ============================================================
+   Rules:
+     1. Only animate transform + opacity (GPU composited layers)
+     2. Never animate width, height, top, left, margin, padding
+     3. Gate infinite animations behind prefers-reduced-motion
+     4. Use will-change sparingly (each one allocates GPU memory)
+   ============================================================ */
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 208, 156, 0); }
+  50% { box-shadow: 0 0 20px 4px rgba(0, 208, 156, 0.15); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Price flash — subtle background pulse on live price update */
+@keyframes price-flash-up {
+  0% { background-color: rgba(0, 208, 156, 0.15); }
+  100% { background-color: transparent; }
+}
+
+@keyframes price-flash-down {
+  0% { background-color: rgba(255, 59, 48, 0.15); }
+  100% { background-color: transparent; }
+}
+
+/* ---- Animation Classes (motion-safe only) ---- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-fade-in {
+    animation: fade-in 0.4s ease-out both;
+  }
+
+  .animate-fade-in-up {
+    animation: fade-in-up 0.5s ease-out both;
+  }
+
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .animate-price-up {
+    animation: price-flash-up 0.6s ease-out;
+  }
+
+  .animate-price-down {
+    animation: price-flash-down 0.6s ease-out;
+  }
+}
+
+/* Skeleton loader — always active (not decorative, it's UX feedback) */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-tertiary) 25%,
+    var(--color-bg-elevated) 50%,
+    var(--color-bg-tertiary) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* ============================================================
+   8. RESPONSIVE — Breakpoint Token Overrides
+   ============================================================ */
+
+@media (min-width: 640px) {
+  :root {
+    --spacing-page: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --spacing-page: 2rem;
+  }
+}

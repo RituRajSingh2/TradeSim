@@ -1,0 +1,23 @@
+{
+  "name": "tradesim",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean",
+    "db:push": "pnpm --filter @tradesim/api prisma db push",
+    "db:migrate": "pnpm --filter @tradesim/api prisma migrate dev",
+    "db:generate": "pnpm --filter @tradesim/api prisma generate",
+    "db:seed": "pnpm --filter @tradesim/api prisma db seed",
+    "db:studio": "pnpm --filter @tradesim/api prisma studio"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0",
+    "typescript": "^5.7.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
