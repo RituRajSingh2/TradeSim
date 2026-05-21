@@ -7,6 +7,11 @@
  *   - Typed using ClientToServerEvents / ServerToClientEvents from @tradesim/shared
  *   - Auto-reconnect with exponential backoff (built into Socket.IO)
  *   - Visibility-aware: pauses on tab hide, resumes on tab show
+ *
+ * Hardening:
+ *   - auth:expired event triggers token refresh before reconnect
+ *   - Reconnect guard prevents duplicate socket creation during refresh
+ *   - Full listener teardown on every destroy to prevent memory leaks
  */
 
 import { io, Socket } from 'socket.io-client';
@@ -23,6 +28,12 @@ export type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 let socket: TypedSocket | null = null;
 let visibilityHandler: (() => void) | null = null;
 
+/**
+ * Reconnect guard: prevents concurrent socket creation when a token refresh
+ * is already in progress (e.g., mobile background → foreground storm).
+ */
+let isReconnecting = false;
+
 const WS_URL =
   process.env.NEXT_PUBLIC_API_WS_URL || 'http://localhost:3001';
 
@@ -35,10 +46,9 @@ const WS_URL =
 export function getSocket(accessToken: string): TypedSocket {
   if (socket?.connected) return socket;
 
-  // Disconnect stale socket before recreating
+  // Disconnect stale socket before recreating (fully tear down all listeners)
   if (socket) {
-    socket.disconnect();
-    socket = null;
+    destroySocket();
   }
 
   socket = io(WS_URL, {
@@ -62,7 +72,8 @@ export function getSocket(accessToken: string): TypedSocket {
 
 /**
  * Disconnect and destroy the socket.
- * Call on logout.
+ * Performs a full cleanup of all listeners to prevent memory leaks.
+ * Call on logout or before reconnecting with a new token.
  */
 export function destroySocket() {
   if (visibilityHandler) {
@@ -70,9 +81,11 @@ export function destroySocket() {
     visibilityHandler = null;
   }
   if (socket) {
+    socket.removeAllListeners();
     socket.disconnect();
     socket = null;
   }
+  isReconnecting = false;
 }
 
 /**
@@ -81,6 +94,22 @@ export function destroySocket() {
  */
 export function getExistingSocket(): TypedSocket | null {
   return socket?.connected ? socket : null;
+}
+
+/**
+ * Returns true if a token refresh + reconnect is already in progress.
+ * Callers should check this before triggering a second reconnect.
+ */
+export function isSocketReconnecting(): boolean {
+  return isReconnecting;
+}
+
+/**
+ * Mark that a token-refresh reconnect is in progress.
+ * Automatically clears when getSocket() or destroySocket() is called.
+ */
+export function setSocketReconnecting(value: boolean): void {
+  isReconnecting = value;
 }
 
 // ---- Visibility-based pause/resume ----

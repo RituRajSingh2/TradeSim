@@ -3,6 +3,8 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../database/prisma.service';
 import { LedgerRepository } from '../../database/ledger.repository';
 import { PortfolioService } from './portfolio.service';
+import { LeaderboardService } from '../leaderboard/leaderboard.service';
+import { RedisService } from '../../redis/redis.service';
 
 // ============================================================
 // Snapshot Service — EOD Portfolio Snapshots for Leaderboard
@@ -20,6 +22,8 @@ export class SnapshotService {
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerRepository,
     private readonly portfolioService: PortfolioService,
+    private readonly leaderboardService: LeaderboardService,
+    private readonly redisService: RedisService,
   ) {}
 
   /**
@@ -32,24 +36,47 @@ export class SnapshotService {
   })
   async generateDailySnapshots() {
     this.logger.log('📸 Starting EOD portfolio snapshot generation...');
+
+    const lockToken = await this.redisService.acquireLock('cron:eod_snapshot', 3600);
+    if (!lockToken) {
+      this.logger.log('Snapshot job is already running on another instance. Skipping.');
+      return;
+    }
+
     const startTime = Date.now();
+    let errors = 0;
 
     try {
-      // Get all active users with portfolios
-      const portfolios = await this.prisma.portfolio.findMany({
-        where: {
-          user: { deletedAt: null, isActive: true },
-        },
-        select: { userId: true, id: true },
-      });
-
       const today = new Date();
       today.setUTCHours(0, 0, 0, 0);
       const snapshotDate = today;
 
       let processed = 0;
       let skipped = 0;
-      let errors = 0;
+
+      let lastId: string | undefined;
+      const batchSize = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const portfolios = await this.prisma.portfolio.findMany({
+          take: batchSize,
+          ...(lastId && { skip: 1, cursor: { id: lastId } }),
+          where: {
+            user: { deletedAt: null, isActive: true },
+          },
+          select: { userId: true, id: true },
+          orderBy: { id: 'asc' },
+        });
+
+        if (portfolios.length < batchSize) {
+          hasMore = false;
+        }
+        if (portfolios.length > 0) {
+          lastId = portfolios[portfolios.length - 1].id;
+        }
+
+
 
       for (const portfolio of portfolios) {
         try {
@@ -112,12 +139,30 @@ export class SnapshotService {
         }
       }
 
+      // Explicit yield for event loop within batch loop
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
       const elapsed = Date.now() - startTime;
       this.logger.log(
         `📸 EOD snapshots complete: ${processed} created, ${skipped} skipped, ${errors} errors (${elapsed}ms)`,
       );
+
+      // Orchestrate leaderboard if successful
+      if (errors === 0) {
+        this.logger.log('📸 Snapshots cleanly finished. Triggering Leaderboard Engine...');
+        // Fire and forget (it handles its own locking/errors)
+        this.leaderboardService.generateRankings().catch(err => {
+          this.logger.error(`Leaderboard generation failed post-snapshot: ${err}`);
+        });
+      } else {
+        this.logger.error('📸 Snapshots had errors. Bypassing Leaderboard generation to prevent rank corruption.');
+      }
     } catch (error) {
       this.logger.error(`EOD snapshot job failed: ${error}`);
+    } finally {
+      await this.redisService.releaseLock('cron:eod_snapshot', lockToken);
+      this.logger.log('🔒 Released snapshot lock.');
     }
   }
 }

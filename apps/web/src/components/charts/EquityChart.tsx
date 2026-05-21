@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { createChart, IChartApi, ISeriesApi, Time } from 'lightweight-charts';
+import { createChart, IChartApi, ISeriesApi, Time, ColorType } from 'lightweight-charts';
 import { apiGet } from '@/lib/api-client';
 
 type TimeRange = '1d' | '1w' | '1mo' | '1y' | 'all';
@@ -54,7 +54,7 @@ export function EquityChart() {
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: 'solid' as const, color: 'transparent' },
+        background: { type: ColorType.Solid, color: 'transparent' },
         textColor: '#a3a3a3',
       },
       grid: {

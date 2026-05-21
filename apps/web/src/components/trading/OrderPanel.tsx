@@ -18,6 +18,7 @@ export function OrderPanel({ symbol, className }: OrderPanelProps) {
 
   const [side, setSide] = useState<OrderSide>('BUY');
   const [quantity, setQuantity] = useState<string>('1');
+  const [slippageTolerance, setSlippageTolerance] = useState<number>(0.02); // 2% default
   const [isPending, setIsPending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -46,11 +47,15 @@ export function OrderPanel({ symbol, className }: OrderPanelProps) {
     setErrorMsg(null);
     setIsPending(true);
 
+    const idempotencyKey = crypto.randomUUID();
+
     const orderPayload: Omit<PlaceOrderRequest, 'idempotencyKey'> = {
       symbol,
       side,
       type: 'MARKET',
       quantity: numQuantity,
+      expectedPrice: lastPrice,
+      slippageTolerance,
     };
 
     try {
@@ -59,13 +64,23 @@ export function OrderPanel({ symbol, className }: OrderPanelProps) {
         lastPrice,
         async (payload) => {
           // This fires the REST API while the UI is already updated instantly via the store.
-          await apiPost('/orders', payload);
+          await apiPost('/orders', payload, {
+            headers: {
+              'X-Idempotency-Key': idempotencyKey
+            }
+          });
         }
       );
       // Reset form on success (optimistic UI is already showing success state)
       setQuantity('1');
     } catch (err: any) {
-      setErrorMsg(err.message || 'Order failed. Please try again.');
+      if (err.message && err.message.includes('PRICE_MOVED')) {
+        setErrorMsg(err.message);
+      } else if (err.message && err.message.includes('QUOTE_STALE')) {
+        setErrorMsg('Market quote is stale. Waiting for fresh price...');
+      } else {
+        setErrorMsg(err.message || 'Order failed. Please try again.');
+      }
     } finally {
       setIsPending(false);
     }
@@ -133,6 +148,20 @@ export function OrderPanel({ symbol, className }: OrderPanelProps) {
           <span className="font-financial font-bold text-text-primary text-lg">
             {estimatedTotal > 0 ? `₹${estimatedTotal.toFixed(2)}` : '₹0.00'}
           </span>
+        </div>
+        
+        <div className="flex justify-between items-center text-xs text-text-secondary pt-2">
+          <span>Slippage Tolerance</span>
+          <select 
+            className="bg-bg-tertiary border border-border-subtle rounded px-1 outline-none"
+            value={slippageTolerance}
+            onChange={(e) => setSlippageTolerance(Number(e.target.value))}
+          >
+            <option value={0.005}>0.5%</option>
+            <option value={0.01}>1.0%</option>
+            <option value={0.02}>2.0%</option>
+            <option value={0.05}>5.0%</option>
+          </select>
         </div>
       </div>
 

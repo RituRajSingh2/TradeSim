@@ -1,6 +1,7 @@
 import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis, { RedisOptions } from 'ioredis';
+import { randomUUID } from 'crypto';
 
 /**
  * Redis service providing caching, pub/sub, and atomic operations.
@@ -120,6 +121,46 @@ export class RedisService implements OnModuleDestroy {
     multi.expire(key, ttlSeconds);
     const results = await multi.exec();
     return (results?.[0]?.[1] as number) ?? 0;
+  }
+
+  // ---- Distributed Locks ----
+
+  /**
+   * Acquires a distributed lock.
+   * @param key Lock key name.
+   * @param ttlSeconds Time-to-live for the lock.
+   * @returns A unique token if the lock was acquired, or null if it was already held.
+   */
+  async acquireLock(key: string, ttlSeconds: number): Promise<string | null> {
+    if (!this.redisUrl) return randomUUID(); // fallback for dev
+    const token = randomUUID();
+    const result = await this.client.set(key, token, 'EX', ttlSeconds, 'NX');
+    if (result === 'OK') {
+      return token;
+    }
+    return null;
+  }
+
+  /**
+   * Releases a distributed lock only if the token matches.
+   * Uses an atomic Lua script to prevent split-brain accidental releases.
+   * @param key Lock key name.
+   * @param token The token returned by acquireLock.
+   * @returns true if released successfully, false otherwise.
+   */
+  async releaseLock(key: string, token: string): Promise<boolean> {
+    if (!this.redisUrl) return true; // fallback for dev
+    
+    const script = `
+      if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+      else
+        return 0
+      end
+    `;
+
+    const result = await this.client.eval(script, 1, key, token);
+    return result === 1;
   }
 
   // ---- Pub/Sub ----

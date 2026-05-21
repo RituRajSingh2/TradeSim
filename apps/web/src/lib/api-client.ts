@@ -115,8 +115,8 @@ export async function apiGet<T>(url: string, params?: Record<string, unknown>): 
   return data.data;
 }
 
-export async function apiPost<T>(url: string, body?: unknown): Promise<T> {
-  const { data } = await apiClient.post<ApiResponse<T>>(url, body);
+export async function apiPost<T>(url: string, body?: unknown, config?: { headers?: Record<string, string> }): Promise<T> {
+  const { data } = await apiClient.post<ApiResponse<T>>(url, body, config);
   return data.data;
 }
 

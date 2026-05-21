@@ -50,6 +50,9 @@ export const OrderSchema = z.object({
   price: AmountSchema,
   totalValue: AmountSchema,
   status: OrderStatusSchema,
+  expectedPrice: AmountSchema.nullable().optional(),
+  slippagePercent: AmountSchema.nullable().optional(),
+  quoteTimestamp: z.string().nullable().optional(),
   executedAt: z.string().nullable(),
   cancelledAt: z.string().nullable(),
   failureReason: z.string().nullable(),
@@ -67,6 +70,8 @@ export const PlaceOrderRequestSchema = z.object({
   /** Required for LIMIT and STOP_LOSS orders */
   limitPrice: z.number().positive().optional(),
   idempotencyKey: z.string().uuid().optional(),
+  expectedPrice: z.number().positive(),
+  slippageTolerance: z.number().min(0).max(1).default(0.02),
 });
 export type PlaceOrderRequest = z.infer<typeof PlaceOrderRequestSchema>;
 

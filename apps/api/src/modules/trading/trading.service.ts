@@ -3,6 +3,7 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
+  NotAcceptableException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { LockingRepository } from '../../database/locking.repository';
@@ -78,6 +79,9 @@ export class TradingService {
     userId: string,
     symbol: string,
     quantity: number,
+    idempotencyKey: string,
+    expectedPrice: number,
+    slippageTolerance: number,
   ) {
     // 0. Validate market hours
     this.assertMarketOpen();
@@ -90,18 +94,34 @@ export class TradingService {
       throw new NotFoundException(`Symbol ${symbol} not found or inactive`);
     }
 
-    // 2. Fetch current price
-    // NOTE (TOCTOU): Price is fetched outside the lock. For paper trading this is
-    // acceptable — Yahoo data updates every 5s, so the race window is negligible.
-    // For real trading, the price should be fetched inside the lock window.
-    const quote = await this.marketService.getQuote(symbol);
-    const price = quote.ltp;
-    const totalValue = +(price * quantity).toFixed(2);
-
-    // 3-9. Execute in transaction with pessimistic lock
-    return this.prisma.$transaction(async (tx) => {
+    // 2. Begin transaction with pessimistic lock
+    try {
+      return await this.prisma.$transaction(async (tx) => {
       // 3. Lock portfolio
       const portfolio = await this.locking.lockPortfolio(tx, userId);
+
+      // 4. Fetch current price (INSIDE LOCK)
+      const quote = await this.marketService.getQuote(symbol);
+      const price = quote.ltp;
+      const quoteTime = quote.timestamp > 100000000000 ? quote.timestamp : quote.timestamp * 1000;
+      
+      // Validate freshness (max 5s old)
+      if (Date.now() - quoteTime > 5000) {
+        throw new NotAcceptableException('QUOTE_STALE: Market data is delayed. Please refresh.');
+      }
+
+      // Validate slippage
+      const expectedPrice = arguments[4]; // expectedPrice from params
+      const slippageTolerance = arguments[5]; // slippageTolerance from params
+      
+      const slippagePercent = Math.abs(price - expectedPrice) / expectedPrice;
+      if (slippagePercent > slippageTolerance) {
+        throw new NotAcceptableException(
+          `PRICE_MOVED: Market price moved to ₹${price}. Please confirm new price.`
+        );
+      }
+
+      const totalValue = +(price * quantity).toFixed(2);
 
       // 4. Check balance
       const currentBalance = Number(portfolio.balance);
@@ -118,12 +138,16 @@ export class TradingService {
           symbolId: marketSymbol.id,
           symbol,
           companyName: quote.companyName,
+          idempotencyKey,
           side: 'BUY',
           type: 'MARKET',
           quantity,
           price,
           totalValue,
           status: 'EXECUTED',
+          expectedPrice: expectedPrice,
+          slippagePercent: +slippagePercent.toFixed(4),
+          quoteTimestamp: new Date(quoteTime),
           executedAt: new Date(),
         },
       });
@@ -204,6 +228,9 @@ export class TradingService {
           price: Number(order.price),
           totalValue: Number(order.totalValue),
           status: order.status,
+          expectedPrice: expectedPrice,
+          slippagePercent: +slippagePercent.toFixed(4),
+          quoteTimestamp: new Date(quoteTime).toISOString(),
           executedAt: order.executedAt,
         },
         portfolio: {
@@ -211,7 +238,38 @@ export class TradingService {
           investedValue: +(currentInvested + totalValue).toFixed(2),
         },
       };
-    }, { timeout: 10000, maxWait: 5000 });
+      }, { timeout: 10000, maxWait: 5000 });
+    } catch (error: any) {
+      if (error.code === 'P2002' && error.meta?.target?.includes('idempotency_key')) {
+        this.logger.warn(`Idempotency trigger: Duplicate buy order caught for key ${idempotencyKey}`);
+        
+        // Replay-safe return
+        const existingOrder = await this.prisma.order.findUnique({
+          where: { idempotencyKey },
+          include: { user: { include: { portfolio: true } } }
+        });
+
+        if (existingOrder && existingOrder.user.portfolio) {
+          return {
+            order: {
+              id: existingOrder.id,
+              symbol: existingOrder.symbol,
+              side: existingOrder.side,
+              quantity: existingOrder.quantity,
+              price: Number(existingOrder.price),
+              totalValue: Number(existingOrder.totalValue),
+              status: existingOrder.status,
+              executedAt: existingOrder.executedAt,
+            },
+            portfolio: {
+              balance: Number(existingOrder.user.portfolio.balance),
+              investedValue: Number(existingOrder.user.portfolio.investedValue),
+            },
+          };
+        }
+      }
+      throw error;
+    }
   }
 
   /**
@@ -231,6 +289,9 @@ export class TradingService {
     userId: string,
     symbol: string,
     quantity: number,
+    idempotencyKey: string,
+    expectedPrice: number,
+    slippageTolerance: number,
   ) {
     // 0. Validate market hours
     this.assertMarketOpen();
@@ -243,14 +304,34 @@ export class TradingService {
       throw new NotFoundException(`Symbol ${symbol} not found or inactive`);
     }
 
-    // 2. Fetch current price
-    const quote = await this.marketService.getQuote(symbol);
-    const price = quote.ltp;
-    const totalValue = +(price * quantity).toFixed(2);
-
-    return this.prisma.$transaction(async (tx) => {
+    // 2. Begin transaction with pessimistic lock
+    try {
+      return await this.prisma.$transaction(async (tx) => {
       // 3. Lock portfolio
       const portfolio = await this.locking.lockPortfolio(tx, userId);
+
+      // 4. Fetch current price (INSIDE LOCK)
+      const quote = await this.marketService.getQuote(symbol);
+      const price = quote.ltp;
+      const quoteTime = quote.timestamp > 100000000000 ? quote.timestamp : quote.timestamp * 1000;
+      
+      // Validate freshness (max 5s old)
+      if (Date.now() - quoteTime > 5000) {
+        throw new NotAcceptableException('QUOTE_STALE: Market data is delayed. Please refresh.');
+      }
+
+      // Validate slippage
+      const expectedPrice = arguments[4]; // expectedPrice from params
+      const slippageTolerance = arguments[5]; // slippageTolerance from params
+      
+      const slippagePercent = Math.abs(price - expectedPrice) / expectedPrice;
+      if (slippagePercent > slippageTolerance) {
+        throw new NotAcceptableException(
+          `PRICE_MOVED: Market price moved to ₹${price}. Please confirm new price.`
+        );
+      }
+
+      const totalValue = +(price * quantity).toFixed(2);
 
       // Verify holding exists and has sufficient quantity
       const holding = await tx.holding.findFirst({
@@ -274,12 +355,16 @@ export class TradingService {
           symbolId: marketSymbol.id,
           symbol,
           companyName: quote.companyName,
+          idempotencyKey,
           side: 'SELL',
           type: 'MARKET',
           quantity,
           price,
           totalValue,
           status: 'EXECUTED',
+          expectedPrice: expectedPrice,
+          slippagePercent: +slippagePercent.toFixed(4),
+          quoteTimestamp: new Date(quoteTime),
           executedAt: new Date(),
         },
       });
@@ -359,6 +444,9 @@ export class TradingService {
           price: Number(order.price),
           totalValue: Number(order.totalValue),
           status: order.status,
+          expectedPrice: expectedPrice,
+          slippagePercent: +slippagePercent.toFixed(4),
+          quoteTimestamp: new Date(quoteTime).toISOString(),
           executedAt: order.executedAt,
         },
         portfolio: {
@@ -366,7 +454,38 @@ export class TradingService {
           investedValue: +Math.max(0, currentInvested - soldBuyValue).toFixed(2),
         },
       };
-    }, { timeout: 10000, maxWait: 5000 });
+      }, { timeout: 10000, maxWait: 5000 });
+    } catch (error: any) {
+      if (error.code === 'P2002' && error.meta?.target?.includes('idempotency_key')) {
+        this.logger.warn(`Idempotency trigger: Duplicate sell order caught for key ${idempotencyKey}`);
+        
+        // Replay-safe return
+        const existingOrder = await this.prisma.order.findUnique({
+          where: { idempotencyKey },
+          include: { user: { include: { portfolio: true } } }
+        });
+
+        if (existingOrder && existingOrder.user.portfolio) {
+          return {
+            order: {
+              id: existingOrder.id,
+              symbol: existingOrder.symbol,
+              side: existingOrder.side,
+              quantity: existingOrder.quantity,
+              price: Number(existingOrder.price),
+              totalValue: Number(existingOrder.totalValue),
+              status: existingOrder.status,
+              executedAt: existingOrder.executedAt,
+            },
+            portfolio: {
+              balance: Number(existingOrder.user.portfolio.balance),
+              investedValue: Number(existingOrder.user.portfolio.investedValue),
+            },
+          };
+        }
+      }
+      throw error;
+    }
   }
 
   /**

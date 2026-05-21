@@ -7,6 +7,8 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Headers,
+  BadRequestException,
 } from '@nestjs/common';
 import { TradingService } from './trading.service';
 import { JwtAuthGuard, type JwtPayload } from '../../common/guards/auth.guard';
@@ -28,12 +30,20 @@ export class TradingController {
   async placeOrder(
     @CurrentUser() user: JwtPayload,
     @Body(new ZodPipe(PlaceOrderRequestSchema)) body: PlaceOrderRequest,
+    @Headers('x-idempotency-key') idempotencyKey: string,
   ) {
+    if (!idempotencyKey) {
+      throw new BadRequestException('x-idempotency-key header is required to prevent double-execution');
+    }
+
     if (body.side === 'BUY') {
       return this.tradingService.placeBuyOrder(
         user.sub,
         body.symbol,
         body.quantity,
+        idempotencyKey,
+        body.expectedPrice,
+        body.slippageTolerance,
       );
     }
 
@@ -41,6 +51,9 @@ export class TradingController {
       user.sub,
       body.symbol,
       body.quantity,
+      idempotencyKey,
+      body.expectedPrice,
+      body.slippageTolerance,
     );
   }
 

@@ -16,7 +16,7 @@ import { WS_EVENTS } from '@tradesim/shared';
 // ============================================================
 
 const POLL_INTERVAL_MS = 5000; // 5s — matches Yahoo data resolution
-const BROADCAST_INTERVAL_MS = 1000; // 1s — Tier 1 tick interval
+const BROADCAST_INTERVAL_MS = 250; // 250ms — 4fps flush windows
 
 @Injectable()
 export class PriceBroadcaster implements OnModuleInit, OnModuleDestroy {
@@ -28,6 +28,9 @@ export class PriceBroadcaster implements OnModuleInit, OnModuleDestroy {
   /** Symbol → latest quote (in-memory cache) */
   private readonly latestQuotes = new Map<string, StockQuote>();
 
+  /** Symbol → last broadcasted timestamp (to prevent duplicate emissions in the 250ms loop) */
+  private readonly lastBroadcastedQuotes = new Map<string, number>();
+
   /** Client → last-sent quote per symbol (for delta computation) */
   private readonly lastSentSnapshots = new Map<
     string,
@@ -37,7 +40,7 @@ export class PriceBroadcaster implements OnModuleInit, OnModuleDestroy {
   /** Central poll timer — fetches ALL active symbols every 5s */
   private pollTimer: NodeJS.Timeout | null = null;
 
-  /** Broadcast timer — emits to clients every 1s */
+  /** Broadcast timer — emits to clients every 250ms */
   private broadcastTimer: NodeJS.Timeout | null = null;
 
   constructor(
@@ -147,6 +150,11 @@ export class PriceBroadcaster implements OnModuleInit, OnModuleDestroy {
         const quote = this.latestQuotes.get(symbol);
         if (!quote) continue;
 
+        const lastEmittedTimestamp = this.lastBroadcastedQuotes.get(symbol);
+
+        // DELTA CHECK: Only broadcast if the quote has updated since our last flush
+        if (lastEmittedTimestamp === quote.timestamp) continue;
+
         // Emit to the stock room using the shared event constant
         this.server.to(`stock:${symbol}`).emit(WS_EVENTS.STOCK_PRICE, {
           symbol: quote.symbol,
@@ -160,6 +168,9 @@ export class PriceBroadcaster implements OnModuleInit, OnModuleDestroy {
           changePercent: quote.changePercent,
           timestamp: quote.timestamp,
         });
+
+        // Track what we just sent
+        this.lastBroadcastedQuotes.set(symbol, quote.timestamp);
       }
     }, BROADCAST_INTERVAL_MS);
   }

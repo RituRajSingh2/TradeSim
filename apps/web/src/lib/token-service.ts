@@ -15,6 +15,8 @@ const STORAGE_KEYS = {
   accessToken: 'tradesim:access_token',
 } as const;
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+
 function getStorage(): Storage | null {
   if (typeof window === 'undefined') return null;
   return window.localStorage;
@@ -57,7 +59,34 @@ class WebTokenStorage implements TokenStorageAdapter {
   hasTokens(): boolean {
     return !!this.getAccessToken();
   }
+
+  async refreshTokens(): Promise<string | null> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Important: sends the httpOnly refresh cookie
+      });
+
+      if (!response.ok) {
+        this.clearTokens();
+        return null;
+      }
+
+      const { data } = await response.json();
+      const newAccessToken = data.accessToken;
+      
+      if (newAccessToken) {
+        this.setAccessToken(newAccessToken);
+        return newAccessToken;
+      }
+      return null;
+    } catch (error) {
+      this.clearTokens();
+      return null;
+    }
+  }
 }
 
 /** Singleton instance for the web app */
-export const tokenService: TokenStorageAdapter = new WebTokenStorage();
+export const tokenService = new WebTokenStorage();

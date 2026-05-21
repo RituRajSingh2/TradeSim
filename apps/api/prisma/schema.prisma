@@ -258,6 +258,7 @@ model Holding {
 /// Uses symbolId FK + denormalized symbol/companyName for read performance.
 model Order {
   id              String      @id @default(uuid())
+  idempotencyKey  String?     @unique @map("idempotency_key")
   userId          String      @map("user_id")
   symbolId        String      @map("symbol_id")
   symbol          String
@@ -270,6 +271,9 @@ model Order {
   price           Decimal     @db.Decimal(14, 4)
   totalValue      Decimal     @map("total_value") @db.Decimal(14, 2)
   status          OrderStatus @default(PENDING)
+  expectedPrice   Decimal?    @map("expected_price") @db.Decimal(14, 4)
+  slippagePercent Decimal?    @map("slippage_percent") @db.Decimal(10, 4)
+  quoteTimestamp  DateTime?   @map("quote_timestamp")
   executedAt      DateTime?   @map("executed_at")
   cancelledAt     DateTime?   @map("cancelled_at")
   expiresAt       DateTime?   @map("expires_at")
