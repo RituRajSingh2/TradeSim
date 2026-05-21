@@ -46,12 +46,31 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // Map HTTP status to error code
     const errorCode = this.getErrorCode(status, code);
 
-    // Log server errors
+    // Log server errors as structured JSON
     if (status >= 500) {
-      this.logger.error(
-        `${request.method} ${request.url} — ${status}`,
-        exception instanceof Error ? exception.stack : String(exception),
-      );
+      this.logger.error({
+        message: `${request.method} ${request.url} failed with ${status}`,
+        eventType: 'HTTP_EXCEPTION',
+        metadata: {
+          statusCode: status,
+          path: request.url,
+          method: request.method,
+          error: exception instanceof Error ? exception.message : String(exception),
+          stack: exception instanceof Error ? exception.stack : undefined,
+        },
+      });
+    } else {
+      // Log client errors as WARN
+      this.logger.warn({
+        message: `${request.method} ${request.url} failed with ${status}`,
+        eventType: 'HTTP_CLIENT_ERROR',
+        metadata: {
+          statusCode: status,
+          path: request.url,
+          method: request.method,
+          error: message,
+        },
+      });
     }
 
     response.status(status).json({

@@ -13,6 +13,7 @@ import { TradingModule } from './modules/trading/trading.module';
 import { PortfolioModule } from './modules/portfolio/portfolio.module';
 import { WebsocketModule } from './modules/websocket/websocket.module';
 import { LeaderboardModule } from './modules/leaderboard/leaderboard.module';
+import { LoggerModule } from './common/logger/logger.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import configuration from './config/configuration';
 import { validateEnv } from './config/env.validation';
@@ -53,6 +54,7 @@ import { validateEnv } from './config/env.validation';
     ScheduleModule.forRoot(),
 
     // ---- Infrastructure ----
+    LoggerModule,
     DatabaseModule,
     RedisModule,
 

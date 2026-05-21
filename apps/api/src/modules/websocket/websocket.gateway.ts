@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -26,6 +26,7 @@ import {
   type WsOrderExecutedPayload,
   type WsNotificationPayload,
 } from '@tradesim/shared';
+import { PlatformLogger } from '../../common/logger/logger.service';
 
 // ============================================================
 // WebSocket Gateway — Socket.IO with JWT authentication
@@ -63,7 +64,15 @@ export class TradingGateway
   @WebSocketServer()
   server!: Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
-  private readonly logger = new Logger(TradingGateway.name);
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+    private readonly subscriptions: SubscriptionManager,
+    private readonly broadcaster: PriceBroadcaster,
+    private readonly logger: PlatformLogger,
+  ) {
+    this.logger.setContext(TradingGateway.name);
+  }
 
   /** clientId → userId (for cleanup and room management) */
   private readonly clientUsers = new Map<string, string>();
@@ -88,12 +97,7 @@ export class TradingGateway
     return typeof s === 'string' && s.length > 0 && s.length <= 20 && /^[A-Za-z0-9 &]+$/.test(s);
   }
 
-  constructor(
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
-    private readonly subscriptions: SubscriptionManager,
-    private readonly broadcaster: PriceBroadcaster,
-  ) {}
+
 
   afterInit(server: Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>) {
     this.broadcaster.setServer(server);
@@ -116,7 +120,11 @@ export class TradingGateway
 
       // --- Rate Limiting ---
       if (this.isRateLimited(ip)) {
-        this.logger.warn(`Rate limit hit for IP ${ip}. Rejecting socket ${client.id}.`);
+        this.logger.warn({
+          message: `Rate limit hit for IP ${ip}. Rejecting socket ${client.id}.`,
+          eventType: 'WS_RECONNECT_ABUSE',
+          metadata: { ip, socketId: client.id }
+        });
         client.emit('error', { message: 'Too many connections. Please wait before reconnecting.' });
         client.disconnect();
         return;
@@ -129,7 +137,11 @@ export class TradingGateway
         client.handshake.headers?.authorization?.replace('Bearer ', '');
 
       if (!token) {
-        this.logger.warn(`Client ${client.id} connected without token`);
+        this.logger.warn({
+          message: `Client ${client.id} connected without token`,
+          eventType: 'WS_AUTH_FAILED',
+          metadata: { ip, socketId: client.id }
+        });
         client.disconnect();
         return;
       }
@@ -159,12 +171,17 @@ export class TradingGateway
       // Auto-join portfolio room
       client.join(`portfolio:${userId}`);
 
-      this.logger.log(
-        `Client ${client.id} connected (user: ${userId}, exp: ${new Date(tokenExpMs).toISOString()}). ` +
-          `Total clients: ${this.subscriptions.getClientCount()}`,
-      );
+      this.logger.log({
+        message: `Client ${client.id} connected. Total clients: ${this.subscriptions.getClientCount()}`,
+        eventType: 'WS_CONNECT',
+        metadata: { userId, socketId: client.id, exp: new Date(tokenExpMs).toISOString(), ip }
+      });
     } catch (error) {
-      this.logger.warn(`Auth failed for client ${client.id}: ${error}`);
+      this.logger.warn({
+        message: `Auth failed for client ${client.id}: ${error}`,
+        eventType: 'WS_AUTH_FAILED',
+        metadata: { ip, socketId: client.id, error: String(error) }
+      });
       client.emit('error', { message: 'Authentication failed' });
       client.disconnect();
     }
@@ -191,10 +208,11 @@ export class TradingGateway
 
     this.clientUsers.delete(client.id);
 
-    this.logger.log(
-      `Client ${client.id} disconnected (user: ${userId || 'unknown'}). ` +
-        `Total clients: ${this.subscriptions.getClientCount()}`,
-    );
+    this.logger.log({
+      message: `Client ${client.id} disconnected. Total clients: ${this.subscriptions.getClientCount()}`,
+      eventType: 'WS_DISCONNECT',
+      metadata: { userId: userId || 'unknown', socketId: client.id }
+    });
   }
 
   // ============================================================
@@ -225,9 +243,11 @@ export class TradingGateway
         expiredCount++;
         const userId = (socket.data as any)?.userId || 'unknown';
 
-        this.logger.log(
-          `Session expired: socket=${socket.id} user=${userId}. Disconnecting.`,
-        );
+        this.logger.log({
+          message: `Session expired: socket=${socket.id} user=${userId}. Disconnecting.`,
+          eventType: 'WS_SESSION_EXPIRED',
+          metadata: { userId, socketId: socket.id }
+        });
 
         // Notify the client it is being disconnected due to session expiry
         // so it can attempt a token refresh or redirect to login

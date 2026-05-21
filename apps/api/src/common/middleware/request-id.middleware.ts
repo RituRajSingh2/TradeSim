@@ -1,6 +1,7 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
+import { requestContext } from '../logger/logger.context';
 
 const REQUEST_ID_HEADER = 'x-request-id';
 
@@ -17,12 +18,23 @@ const REQUEST_ID_HEADER = 'x-request-id';
  */
 @Injectable()
 export class RequestIdMiddleware implements NestMiddleware {
-  use(req: Request & { id?: string }, res: Response, next: NextFunction) {
+  use(req: Request & { id?: string; user?: any }, res: Response, next: NextFunction) {
     const requestId = (req.headers[REQUEST_ID_HEADER] as string) || randomUUID();
 
     req.id = requestId;
     res.setHeader(REQUEST_ID_HEADER, requestId);
 
-    next();
+    // Initialize context. User ID might not be available yet since this runs before AuthGuard,
+    // but the context object is created and can be updated later in the request lifecycle if needed,
+    // or just initialized here with requestId.
+    const context = {
+      requestId,
+      // If user is already resolved somehow (e.g. JWT payload mapped early), store it.
+      userId: req.user?.id || req.user?.sub || undefined,
+    };
+
+    requestContext.run(context, () => {
+      next();
+    });
   }
 }

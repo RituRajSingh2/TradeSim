@@ -7,6 +7,7 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { PlatformLogger } from './common/logger/logger.service';
 import type { AppConfig } from './config/config.types';
 
 async function bootstrap() {
@@ -18,6 +19,9 @@ async function bootstrap() {
         ? ['error', 'warn', 'log']
         : ['error', 'warn', 'log', 'debug', 'verbose'],
   });
+
+  const platformLogger = app.get(PlatformLogger);
+  app.useLogger(platformLogger);
 
   const configService = app.get(ConfigService);
   const port = configService.get<AppConfig['port']>('port', 3001);

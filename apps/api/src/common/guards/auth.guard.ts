@@ -9,6 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { requestContext } from '../logger/logger.context';
 
 export interface JwtPayload {
   sub: string; // userId
@@ -56,6 +57,12 @@ export class JwtAuthGuard implements CanActivate {
       const payload = await this.jwtService.verifyAsync<JwtPayload>(token);
       // Attach decoded user to request for downstream handlers
       (request as Request & { user: JwtPayload }).user = payload;
+      
+      const ctx = requestContext.getStore();
+      if (ctx) {
+        ctx.userId = payload.sub;
+      }
+
       return true;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';

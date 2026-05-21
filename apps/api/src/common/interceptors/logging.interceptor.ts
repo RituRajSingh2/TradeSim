@@ -25,13 +25,31 @@ export class LoggingInterceptor implements NestInterceptor {
           const response = ctx.getResponse();
           const statusCode = response.statusCode;
           const elapsed = Date.now() - startTime;
-          this.logger.log(`${method} ${url} ${statusCode} — ${elapsed}ms`);
+          this.logger.log({
+            message: `${method} ${url} ${statusCode}`,
+            eventType: 'HTTP_RESPONSE',
+            metadata: {
+              statusCode,
+              method,
+              path: url,
+              durationMs: elapsed,
+            },
+          });
         },
         error: (error) => {
           const elapsed = Date.now() - startTime;
-          this.logger.error(
-            `${method} ${url} ${error?.status || 500} — ${elapsed}ms`,
-          );
+          // The HttpExceptionFilter handles the actual error trace,
+          // but we log the response time metric here.
+          this.logger.warn({
+            message: `${method} ${url} ${error?.status || 500}`,
+            eventType: 'HTTP_RESPONSE_ERROR',
+            metadata: {
+              statusCode: error?.status || 500,
+              method,
+              path: url,
+              durationMs: elapsed,
+            },
+          });
         },
       }),
     );
