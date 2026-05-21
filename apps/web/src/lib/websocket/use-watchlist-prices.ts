@@ -12,59 +12,80 @@
  *   prices.get('RELIANCE') // → { ltp, change, changePercent }
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import {
-  WS_EVENTS,
-  type WsWatchlistPricesPayload,
-  type WsWatchlistPriceItem,
-} from '@tradesim/shared';
-import { useSocket } from './use-socket';
+import { useEffect, useSyncExternalStore, useCallback, useMemo } from 'react';
+import type { WsWatchlistPriceItem } from '@tradesim/shared';
+import { subscriptionManager } from './subscription-manager';
+import { priceFeed } from './price-feed';
 
 export type WatchlistPriceMap = Map<string, WsWatchlistPriceItem>;
 
 export function useWatchlistPrices(symbols: string[]): WatchlistPriceMap {
-  const { socket } = useSocket();
-  // Stable Map reference — mutated in-place, spread copy triggers render
-  const pricesRef = useRef<WatchlistPriceMap>(new Map());
-  const [, forceUpdate] = useState(0);
+  const upperSymbols = useMemo(
+    () => symbols.map((s) => s.toUpperCase()),
+    [symbols.join(',')]
+  );
 
-  // Stable symbols key to avoid effect re-fires on array identity change
-  const symbolsKey = symbols.map((s) => s.toUpperCase()).sort().join(',');
+  // Subscribe to the global price feed for multiple symbols
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (upperSymbols.length === 0) return () => {};
+      
+      const unsubscribers = upperSymbols.map((symbol) =>
+        priceFeed.subscribe(symbol, onStoreChange)
+      );
 
-  useEffect(() => {
-    if (!socket || symbols.length === 0) return;
+      return () => {
+        unsubscribers.forEach((unsub) => unsub());
+      };
+    },
+    [upperSymbols]
+  );
 
-    const upperSymbols = symbols.map((s) => s.toUpperCase());
-
-    // Subscribe watchlist
-    socket.emit(WS_EVENTS.SUBSCRIBE_WATCHLIST, { symbols: upperSymbols });
-
-    const handlePrices = (payload: WsWatchlistPricesPayload) => {
-      if (payload.type === 'snapshot') {
-        // Full replacement
-        pricesRef.current = new Map(
-          payload.prices.map((p) => [p.symbol, p]),
-        );
-      } else {
-        // Delta — merge changed entries only
-        const next = new Map(pricesRef.current);
-        for (const item of payload.prices) {
-          next.set(item.symbol, item);
-        }
-        pricesRef.current = next;
+  // Get the current snapshot map
+  const getSnapshot = useCallback((): WatchlistPriceMap => {
+    const map = new Map<string, WsWatchlistPriceItem>();
+    for (const symbol of upperSymbols) {
+      const data = priceFeed.getPrice(symbol);
+      if (data?.quote) {
+        map.set(symbol, {
+          symbol: data.quote.symbol,
+          ltp: data.quote.ltp,
+          change: data.quote.change,
+          changePercent: data.quote.changePercent,
+        });
       }
-      // Trigger re-render
-      forceUpdate((n) => n + 1);
-    };
+    }
+    return map;
+  }, [upperSymbols]);
 
-    socket.on(WS_EVENTS.WATCHLIST_PRICES, handlePrices);
+  // To prevent constant re-renders when producing a new map object in getSnapshot,
+  // useSyncExternalStore requires getSnapshot to return the SAME reference if the data hasn't changed.
+  // We can hash the versions to create a stable reference.
+  const getVersionHash = useCallback(() => {
+    return upperSymbols
+      .map((sym) => `${sym}:${priceFeed.getPrice(sym)?.version || 0}`)
+      .join('|');
+  }, [upperSymbols]);
+
+  const versionHash = useSyncExternalStore(subscribe, getVersionHash, getVersionHash);
+
+  // Create the map only when the version hash changes
+  const pricesMap = useMemo(() => getSnapshot(), [versionHash, getSnapshot]);
+
+  // Manage websocket lifecycle (ref counting)
+  useEffect(() => {
+    if (upperSymbols.length === 0) return;
+
+    upperSymbols.forEach((symbol) => {
+      subscriptionManager.subscribeWatchlistSymbol(symbol);
+    });
 
     return () => {
-      socket.off(WS_EVENTS.WATCHLIST_PRICES, handlePrices);
-      socket.emit(WS_EVENTS.UNSUBSCRIBE_WATCHLIST);
+      upperSymbols.forEach((symbol) => {
+        subscriptionManager.unsubscribeWatchlistSymbol(symbol);
+      });
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket, symbolsKey]);
+  }, [upperSymbols]);
 
-  return pricesRef.current;
+  return pricesMap;
 }

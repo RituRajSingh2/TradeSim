@@ -1,12 +1,18 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { PortfolioService } from './portfolio.service';
+import { AnalyticsService } from './analytics.service';
+import { PortfolioHistoryService } from './portfolio-history.service';
 import { JwtAuthGuard, type JwtPayload } from '../../common/guards/auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('portfolio')
 @UseGuards(JwtAuthGuard)
 export class PortfolioController {
-  constructor(private readonly portfolioService: PortfolioService) {}
+  constructor(
+    private readonly portfolioService: PortfolioService,
+    private readonly analyticsService: AnalyticsService,
+    private readonly historyService: PortfolioHistoryService,
+  ) {}
 
   /**
    * GET /api/portfolio
@@ -45,5 +51,33 @@ export class PortfolioController {
       pageSize ? parseInt(pageSize, 10) : 20,
       category,
     );
+  }
+  /**
+   * GET /api/portfolio/analytics
+   * Returns deep trading performance metrics (Win Rate, P&L, Allocation).
+   */
+  @Get('analytics')
+  async getAnalytics(@CurrentUser() user: JwtPayload) {
+    return this.analyticsService.getPerformanceMetrics(user.sub);
+  }
+
+  /**
+   * GET /api/portfolio/history?range=1d|1w|1mo|1y|all
+   * Returns equity curve array [time, value].
+   */
+  @Get('history')
+  async getHistory(
+    @CurrentUser() user: JwtPayload,
+    @Query('range') range?: string,
+  ) {
+    const validRanges = ['1d', '1w', '1mo', '1y', 'all'];
+    const timeRange = range ? range.toLowerCase() : '1mo';
+    
+    if (!validRanges.includes(timeRange)) {
+      throw new Error(`Invalid range. Must be one of: ${validRanges.join(', ')}`);
+    }
+
+    const points = await this.historyService.getEquityCurve(user.sub, timeRange);
+    return { data: points };
   }
 }

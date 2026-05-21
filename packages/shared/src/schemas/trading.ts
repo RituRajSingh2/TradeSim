@@ -18,6 +18,9 @@ export type OrderStatus = z.infer<typeof OrderStatusSchema>;
 export const OrderTypeSchema = z.enum(['MARKET', 'LIMIT', 'STOP_LOSS']);
 export type OrderType = z.infer<typeof OrderTypeSchema>;
 
+export const ChartTimeframeSchema = z.enum(['10s', '30s', '1m', '5m', '15m', '1h', '1D', '1W', '1M', '1Y']);
+export type ChartTimeframe = z.infer<typeof ChartTimeframeSchema>;
+
 export const LedgerTypeSchema = z.enum(['CREDIT', 'DEBIT']);
 export type LedgerType = z.infer<typeof LedgerTypeSchema>;
 
@@ -63,6 +66,7 @@ export const PlaceOrderRequestSchema = z.object({
   quantity: z.number().int().positive().max(10000, 'Maximum 10,000 shares per order'),
   /** Required for LIMIT and STOP_LOSS orders */
   limitPrice: z.number().positive().optional(),
+  idempotencyKey: z.string().uuid().optional(),
 });
 export type PlaceOrderRequest = z.infer<typeof PlaceOrderRequestSchema>;
 

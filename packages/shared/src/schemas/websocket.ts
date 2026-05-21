@@ -144,6 +144,8 @@ export const WsPortfolioUpdatePayloadSchema = z.object({
   dayPnl: z.number(),
   dayPnlPercent: z.number(),
   holdings: z.array(WsPortfolioHoldingSchema),
+  serverTimestamp: z.number(),
+  version: z.number(),
 });
 export type WsPortfolioUpdatePayload = z.infer<typeof WsPortfolioUpdatePayloadSchema>;
 
@@ -175,6 +177,7 @@ export const WsOrderExecutedPayloadSchema = z.object({
   totalValue: z.number(),
   status: OrderStatusSchema,
   executedAt: z.string(),
+  idempotencyKey: z.string().optional(),
 });
 export type WsOrderExecutedPayload = z.infer<typeof WsOrderExecutedPayloadSchema>;
 

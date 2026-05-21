@@ -233,6 +233,9 @@ model Holding {
   avgBuyPrice   Decimal   @map("avg_buy_price") @db.Decimal(14, 4)
   totalBuyValue Decimal   @map("total_buy_value") @db.Decimal(14, 2)
   closedAt      DateTime? @map("closed_at")
+  realizedPnl   Decimal?  @map("realized_pnl") @db.Decimal(14, 2)
+  totalExitValue Decimal? @map("total_exit_value") @db.Decimal(14, 2)
+  holdingDuration Int?    @map("holding_duration")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 

@@ -1,12 +1,17 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { MarketService } from './market.service';
+import { HistoryService } from './history.service';
 import { JwtAuthGuard } from '../../common/guards/auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
+import type { ChartTimeframe } from '@tradesim/shared';
 
 @Controller('market')
 @UseGuards(JwtAuthGuard)
 export class MarketController {
-  constructor(private readonly marketService: MarketService) {}
+  constructor(
+    private readonly marketService: MarketService,
+    private readonly historyService: HistoryService
+  ) {}
 
   /**
    * GET /api/market/quote/:symbol
@@ -15,6 +20,34 @@ export class MarketController {
   @Get('quote/:symbol')
   async getQuote(@Param('symbol') symbol: string) {
     return this.marketService.getQuote(symbol.toUpperCase());
+  }
+
+  /**
+   * GET /api/market/history
+   * Advanced chunk-aware pagination for the frontend chart engine.
+   */
+  @Get('history')
+  async getHistory(
+    @Query('symbol') symbol: string,
+    @Query('timeframe') timeframe: ChartTimeframe,
+    @Query('to') to?: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (!symbol || !timeframe) {
+      throw new BadRequestException('symbol and timeframe are required parameters');
+    }
+
+    const toTime = to ? parseInt(to, 10) : Math.floor(Date.now() / 1000);
+    const fetchLimit = limit ? parseInt(limit, 10) : 500;
+
+    const candles = await this.historyService.getHistoricalData(
+      symbol.toUpperCase(),
+      timeframe,
+      toTime,
+      fetchLimit
+    );
+
+    return { candles };
   }
 
   /**

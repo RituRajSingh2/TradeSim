@@ -1,28 +1,37 @@
+// src/lib/socket-client.ts
 import { io, Socket } from 'socket.io-client';
 import type {
   WsStockPricePayload,
   WsPortfolioUpdatePayload,
   WsOrderExecutedPayload,
   WsNotificationPayload,
+  WsWatchlistPricesPayload,
+  WsChartCandlePayload
 } from '@tradesim/shared';
-import { WsEvent } from '@tradesim/shared';
+import { WS_EVENTS } from '@tradesim/shared';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
 
 // ---- Socket Event Map (for type-safe listeners) ----
 
 export interface ServerToClientEvents {
-  [WsEvent.STOCK_PRICE]: (data: WsStockPricePayload) => void;
-  [WsEvent.PORTFOLIO_UPDATE]: (data: WsPortfolioUpdatePayload) => void;
-  [WsEvent.ORDER_EXECUTED]: (data: WsOrderExecutedPayload) => void;
-  [WsEvent.NOTIFICATION]: (data: WsNotificationPayload) => void;
+  [WS_EVENTS.STOCK_PRICE]: (data: WsStockPricePayload) => void;
+  [WS_EVENTS.PORTFOLIO_UPDATE]: (data: WsPortfolioUpdatePayload) => void;
+  [WS_EVENTS.ORDER_EXECUTED]: (data: WsOrderExecutedPayload) => void;
+  [WS_EVENTS.NOTIFICATION]: (data: WsNotificationPayload) => void;
+  [WS_EVENTS.WATCHLIST_PRICES]: (data: WsWatchlistPricesPayload) => void;
+  [WS_EVENTS.CHART_CANDLE]: (data: WsChartCandlePayload) => void;
 }
 
 export interface ClientToServerEvents {
-  [WsEvent.SUBSCRIBE_STOCK]: (data: { symbol: string }) => void;
-  [WsEvent.UNSUBSCRIBE_STOCK]: (data: { symbol: string }) => void;
-  [WsEvent.SUBSCRIBE_PORTFOLIO]: () => void;
-  [WsEvent.UNSUBSCRIBE_PORTFOLIO]: () => void;
+  [WS_EVENTS.SUBSCRIBE_STOCK]: (data: { symbol: string }) => void;
+  [WS_EVENTS.UNSUBSCRIBE_STOCK]: (data: { symbol: string }) => void;
+  [WS_EVENTS.SUBSCRIBE_PORTFOLIO]: () => void;
+  [WS_EVENTS.UNSUBSCRIBE_PORTFOLIO]: () => void;
+  [WS_EVENTS.SUBSCRIBE_WATCHLIST]: (data: { symbols: string[] }) => void;
+  [WS_EVENTS.UNSUBSCRIBE_WATCHLIST]: () => void;
+  [WS_EVENTS.SUBSCRIBE_PAUSE]: () => void;
+  [WS_EVENTS.SUBSCRIBE_RESUME]: () => void;
 }
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -52,7 +61,7 @@ class SocketManager {
       console.log('[WS] Connected:', this.socket?.id);
       // Re-subscribe to previously subscribed stocks on reconnect
       this.subscribedStocks.forEach((symbol) => {
-        this.socket?.emit(WsEvent.SUBSCRIBE_STOCK, { symbol });
+        this.socket?.emit(WS_EVENTS.SUBSCRIBE_STOCK, { symbol });
       });
     });
 
@@ -79,40 +88,56 @@ class SocketManager {
 
   subscribeStock(symbol: string): void {
     this.subscribedStocks.add(symbol);
-    this.socket?.emit(WsEvent.SUBSCRIBE_STOCK, { symbol });
+    this.socket?.emit(WS_EVENTS.SUBSCRIBE_STOCK, { symbol });
   }
 
   unsubscribeStock(symbol: string): void {
     this.subscribedStocks.delete(symbol);
-    this.socket?.emit(WsEvent.UNSUBSCRIBE_STOCK, { symbol });
+    this.socket?.emit(WS_EVENTS.UNSUBSCRIBE_STOCK, { symbol });
   }
 
   subscribePortfolio(): void {
-    this.socket?.emit(WsEvent.SUBSCRIBE_PORTFOLIO);
+    this.socket?.emit(WS_EVENTS.SUBSCRIBE_PORTFOLIO);
   }
 
   unsubscribePortfolio(): void {
-    this.socket?.emit(WsEvent.UNSUBSCRIBE_PORTFOLIO);
+    this.socket?.emit(WS_EVENTS.UNSUBSCRIBE_PORTFOLIO);
   }
 
-  onStockPrice(handler: ServerToClientEvents[typeof WsEvent.STOCK_PRICE]): void {
-    this.socket?.on(WsEvent.STOCK_PRICE, handler);
+  onStockPrice(handler: ServerToClientEvents[typeof WS_EVENTS.STOCK_PRICE]): void {
+    this.socket?.on(WS_EVENTS.STOCK_PRICE, handler);
   }
 
-  offStockPrice(handler: ServerToClientEvents[typeof WsEvent.STOCK_PRICE]): void {
-    this.socket?.off(WsEvent.STOCK_PRICE, handler);
+  offStockPrice(handler: ServerToClientEvents[typeof WS_EVENTS.STOCK_PRICE]): void {
+    this.socket?.off(WS_EVENTS.STOCK_PRICE, handler);
   }
 
-  onPortfolioUpdate(handler: ServerToClientEvents[typeof WsEvent.PORTFOLIO_UPDATE]): void {
-    this.socket?.on(WsEvent.PORTFOLIO_UPDATE, handler);
+  onPortfolioUpdate(handler: ServerToClientEvents[typeof WS_EVENTS.PORTFOLIO_UPDATE]): void {
+    this.socket?.on(WS_EVENTS.PORTFOLIO_UPDATE, handler);
   }
 
-  onOrderExecuted(handler: ServerToClientEvents[typeof WsEvent.ORDER_EXECUTED]): void {
-    this.socket?.on(WsEvent.ORDER_EXECUTED, handler);
+  onOrderExecuted(handler: ServerToClientEvents[typeof WS_EVENTS.ORDER_EXECUTED]): void {
+    this.socket?.on(WS_EVENTS.ORDER_EXECUTED, handler);
   }
 
-  onNotification(handler: ServerToClientEvents[typeof WsEvent.NOTIFICATION]): void {
-    this.socket?.on(WsEvent.NOTIFICATION, handler);
+  onNotification(handler: ServerToClientEvents[typeof WS_EVENTS.NOTIFICATION]): void {
+    this.socket?.on(WS_EVENTS.NOTIFICATION, handler);
+  }
+
+  onWatchlistPrices(handler: ServerToClientEvents[typeof WS_EVENTS.WATCHLIST_PRICES]): void {
+    this.socket?.on(WS_EVENTS.WATCHLIST_PRICES, handler);
+  }
+
+  offWatchlistPrices(handler: ServerToClientEvents[typeof WS_EVENTS.WATCHLIST_PRICES]): void {
+    this.socket?.off(WS_EVENTS.WATCHLIST_PRICES, handler);
+  }
+
+  onChartCandle(handler: ServerToClientEvents[typeof WS_EVENTS.CHART_CANDLE]): void {
+    this.socket?.on(WS_EVENTS.CHART_CANDLE, handler);
+  }
+
+  offChartCandle(handler: ServerToClientEvents[typeof WS_EVENTS.CHART_CANDLE]): void {
+    this.socket?.off(WS_EVENTS.CHART_CANDLE, handler);
   }
 }
 

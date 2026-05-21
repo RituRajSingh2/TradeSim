@@ -13,10 +13,11 @@ export function Header() {
   const getTitle = (): string => {
     const segments = pathname.split('/').filter(Boolean);
     const page = segments[0] || 'home';
-    const titles: Record<string, string> = {
+      const titles: Record<string, string> = {
       home: 'Dashboard',
       markets: 'Markets',
       portfolio: 'Portfolio',
+      analytics: 'Analytics',
       watchlist: 'Watchlist',
       leaderboard: 'Leaderboard',
       profile: 'Profile',
@@ -42,6 +43,7 @@ export function Header() {
             { href: '/home', label: 'Dashboard' },
             { href: '/markets', label: 'Markets' },
             { href: '/portfolio', label: 'Portfolio' },
+            { href: '/analytics', label: 'Analytics' },
             { href: '/watchlist', label: 'Watchlist' },
             { href: '/leaderboard', label: 'Leaderboard' },
           ].map((item) => {

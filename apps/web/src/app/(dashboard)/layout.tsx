@@ -1,5 +1,5 @@
-import { Header } from '@/components/layout/header';
-import { BottomNav } from '@/components/layout/bottom-nav';
+import { DashboardShell } from '@/components/layout/DashboardShell';
+import { DashboardHeader } from '@/components/layout/DashboardHeader';
 
 export default function DashboardLayout({
   children,
@@ -7,12 +7,10 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-dvh bg-bg-primary">
-      <Header />
-      <main className="mx-auto max-w-[var(--container-max)] px-[var(--spacing-page)] pb-20 pt-4 sm:pb-8">
-        {children}
-      </main>
-      <BottomNav />
-    </div>
+    <DashboardShell>
+      <DashboardHeader />
+      {/* We no longer have a bottom nav fixed globally, mobile navigation will be part of the grid/shell later */}
+      {children}
+    </DashboardShell>
   );
 }

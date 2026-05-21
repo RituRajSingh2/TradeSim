@@ -141,6 +141,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@tanstack/react-virtual':
+        specifier: ^3.13.25
+        version: 3.13.25(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@tradesim/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -157,7 +160,7 @@ importers:
         specifier: ^12.0.0
         version: 12.38.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       lightweight-charts:
-        specifier: ^4.2.0
+        specifier: ^4.2.3
         version: 4.2.3
       lucide-react:
         specifier: ^0.460.0
@@ -1022,6 +1025,15 @@ packages:
 
   '@tailwindcss/postcss@4.3.0':
     resolution: {integrity: sha512-Jm05Tjx+9yCLGv5qw1c+84Psds8MnyrEQYCB+FFk2lgGiUjlRqdxke4mVTuYrj2xnVZqKim2Apr5ySuQRYAw/w==}
+
+  '@tanstack/react-virtual@3.13.25':
+    resolution: {integrity: sha512-bmNoqMu6gcAW9JGrKVB0Q1tN1i5RONZF8r1fW0bbE4Oyf3DwEGnzzQJ2OW+Ozg1P4s8PyugkHg2ULZoFQN+cqw==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
+  '@tanstack/virtual-core@3.15.0':
+    resolution: {integrity: sha512-0AwPGx0I8QxPYjAxShT/+z+ZOe9u8mW5rsXvivCTjRfRmz9a43+3mRyi4wwlyoUqOC56q/jatKa0Bh9M99BEHQ==}
 
   '@tokenizer/inflate@0.2.7':
     resolution: {integrity: sha512-MADQgmZT1eKjp06jpI2yozxaU9uVs4GzzgSL+uEq7bVcJ9V1ZXQkeGNql1fsSI0gMy1vhvNTNbUqrx+pZfJVmg==}
@@ -4353,6 +4365,14 @@ snapshots:
       '@tailwindcss/oxide': 4.3.0
       postcss: 8.5.14
       tailwindcss: 4.3.0
+
+  '@tanstack/react-virtual@3.13.25(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+    dependencies:
+      '@tanstack/virtual-core': 3.15.0
+      react: 19.2.6
+      react-dom: 19.2.6(react@19.2.6)
+
+  '@tanstack/virtual-core@3.15.0': {}
 
   '@tokenizer/inflate@0.2.7':
     dependencies:

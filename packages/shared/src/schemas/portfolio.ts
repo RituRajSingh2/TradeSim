@@ -29,7 +29,7 @@ export const HoldingSchema = z.object({
   portfolioId: IdSchema,
   symbol: z.string(),
   companyName: z.string(),
-  quantity: z.number().int().positive(),
+  quantity: z.number().int().nonnegative(), // changed to nonnegative to support 0 for closed positions
   avgBuyPrice: AmountSchema,
   currentPrice: AmountSchema,
   investedValue: AmountSchema,
@@ -38,5 +38,9 @@ export const HoldingSchema = z.object({
   pnlPercent: z.number(),
   dayChange: z.number(),
   dayChangePercent: z.number(),
+  closedAt: z.string().nullable().optional(),
+  realizedPnl: z.number().nullable().optional(),
+  totalExitValue: z.number().nullable().optional(),
+  holdingDuration: z.number().int().nullable().optional(),
 });
 export type Holding = z.infer<typeof HoldingSchema>;

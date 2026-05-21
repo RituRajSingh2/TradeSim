@@ -10,10 +10,10 @@
  *   const { quote, isStale } = useStockPrice('RELIANCE');
  */
 
-import { useEffect, useRef, useState } from 'react';
-import { WS_EVENTS, type WsStockPricePayload } from '@tradesim/shared';
-import { getExistingSocket } from './socket';
-import { useSocket } from './use-socket';
+import { useEffect, useSyncExternalStore, useCallback } from 'react';
+import type { WsStockPricePayload } from '@tradesim/shared';
+import { subscriptionManager } from './subscription-manager';
+import { priceFeed, PriceFeedData } from './price-feed';
 
 export interface UseStockPriceReturn {
   quote: WsStockPricePayload | null;
@@ -22,41 +22,45 @@ export interface UseStockPriceReturn {
 }
 
 export function useStockPrice(symbol: string | null): UseStockPriceReturn {
-  const { socket } = useSocket();
-  const [quote, setQuote] = useState<WsStockPricePayload | null>(null);
-  const lastUpdateRef = useRef<number>(0);
-  const [isStale, setIsStale] = useState(false);
+  // Subscribe to the global price feed
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (!symbol) return () => {};
+      const upperSymbol = symbol.toUpperCase();
+      return priceFeed.subscribe(upperSymbol, onStoreChange);
+    },
+    [symbol]
+  );
 
+  // Get the current snapshot from the global price feed
+  const getSnapshot = useCallback(
+    (): PriceFeedData | undefined => {
+      if (!symbol) return undefined;
+      return priceFeed.getPrice(symbol.toUpperCase());
+    },
+    [symbol]
+  );
+
+  const priceData = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+
+  // Manage websocket lifecycle (ref counting)
   useEffect(() => {
-    if (!socket || !symbol) return;
-
+    if (!symbol) return;
     const upperSymbol = symbol.toUpperCase();
-
-    // Subscribe
-    socket.emit(WS_EVENTS.SUBSCRIBE_STOCK, { symbol: upperSymbol });
-
-    const handlePrice = (data: WsStockPricePayload) => {
-      if (data.symbol !== upperSymbol) return;
-      setQuote(data);
-      lastUpdateRef.current = Date.now();
-      setIsStale(false);
-    };
-
-    socket.on(WS_EVENTS.STOCK_PRICE, handlePrice);
-
-    // Staleness detector — check every 5s
-    const staleTimer = setInterval(() => {
-      if (lastUpdateRef.current > 0 && Date.now() - lastUpdateRef.current > 10_000) {
-        setIsStale(true);
-      }
-    }, 5_000);
-
+    
+    subscriptionManager.subscribeStock(upperSymbol);
     return () => {
-      socket.off(WS_EVENTS.STOCK_PRICE, handlePrice);
-      socket.emit(WS_EVENTS.UNSUBSCRIBE_STOCK, { symbol: upperSymbol });
-      clearInterval(staleTimer);
+      subscriptionManager.unsubscribeStock(upperSymbol);
     };
-  }, [socket, symbol]);
+  }, [symbol]);
 
-  return { quote, isStale };
+  // Staleness detection is derived. We check if the snapshot timestamp is old.
+  const isStale = priceData?.quote
+    ? Date.now() - priceData.quote.timestamp > 10_000
+    : false;
+
+  return { 
+    quote: priceData?.quote || null, 
+    isStale 
+  };
 }

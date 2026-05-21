@@ -302,15 +302,25 @@ export class TradingService {
       const newQuantity = holding.quantity - quantity;
       const proportionSold = quantity / holding.quantity;
       const soldBuyValue = +(Number(holding.totalBuyValue) * proportionSold).toFixed(2);
+      
+      const partialPnl = +(totalValue - soldBuyValue).toFixed(2);
+      const newRealizedPnl = +(Number(holding.realizedPnl || 0) + partialPnl).toFixed(2);
+      const newTotalExitValue = +(Number(holding.totalExitValue || 0) + totalValue).toFixed(2);
 
       if (newQuantity === 0) {
         // Close the holding
+        const now = new Date();
+        const durationMs = now.getTime() - holding.createdAt.getTime();
+
         await tx.holding.update({
           where: { id: holding.id },
           data: {
             quantity: 0,
             totalBuyValue: 0,
-            closedAt: new Date(),
+            closedAt: now,
+            realizedPnl: newRealizedPnl,
+            totalExitValue: newTotalExitValue,
+            holdingDuration: durationMs,
           },
         });
       } else {
@@ -319,6 +329,8 @@ export class TradingService {
           data: {
             quantity: newQuantity,
             totalBuyValue: +(Number(holding.totalBuyValue) - soldBuyValue).toFixed(2),
+            realizedPnl: newRealizedPnl,
+            totalExitValue: newTotalExitValue,
           },
         });
       }
