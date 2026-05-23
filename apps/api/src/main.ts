@@ -50,7 +50,7 @@ async function bootstrap() {
 
   // ---- API Prefix ----
   app.setGlobalPrefix('api', {
-    exclude: ['health'],
+    exclude: ['health', 'health/live', 'health/ready'],
   });
 
   // ---- Global Pipes ----

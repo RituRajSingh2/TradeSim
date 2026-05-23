@@ -54,6 +54,23 @@ export class ProviderManager {
     this.logger.log(`Registered market data provider: ${name} (Mock: ${isMock})`);
   }
 
+  /**
+   * Returns true if at least one provider (real or mock) is registered.
+   * Used by the readiness health check — zero cost, no network call.
+   */
+  get isInitialized(): boolean {
+    return this.providers.length > 0;
+  }
+
+  /**
+   * Returns true if at least one non-mock, non-tripped provider is available.
+   * Falls back to mock if that is all we have.
+   */
+  get isReady(): boolean {
+    const now = Date.now();
+    return this.providers.some(p => p.disabledUntil <= now);
+  }
+
   private getActiveProviders(): ProviderRegistration[] {
     const now = Date.now();
     return this.providers.filter(p => {

@@ -132,6 +132,14 @@ export class TradingGateway
     }
   }
 
+  /**
+   * Lightweight readiness signal — true once the Socket.IO server
+   * has been fully initialised by afterInit(). No network call.
+   */
+  get isReady(): boolean {
+    return !!this.server;
+  }
+
   // ============================================================
   // Connection Lifecycle
   // ============================================================
