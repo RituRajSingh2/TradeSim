@@ -12,9 +12,19 @@
     "db:migrate": "pnpm --filter @tradesim/api prisma migrate dev",
     "db:generate": "pnpm --filter @tradesim/api prisma generate",
     "db:seed": "pnpm --filter @tradesim/api prisma db seed",
-    "db:studio": "pnpm --filter @tradesim/api prisma studio"
+    "db:studio": "pnpm --filter @tradesim/api prisma studio",
+    "test:load": "tsx scripts/load-test.ts",
+    "test:storm": "tsx scripts/ws-storm.ts",
+    "test:orders": "tsx scripts/order-stress.ts",
+    "token": "tsx scripts/generate-token.ts"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
+    "dotenv": "^17.4.2",
+    "jsonwebtoken": "^9.0.3",
+    "socket.io-client": "^4.8.0",
+    "ts-node": "^10.9.0",
+    "tsx": "^4.22.3",
     "turbo": "^2.5.0",
     "typescript": "^5.7.0"
   },
