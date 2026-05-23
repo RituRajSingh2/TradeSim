@@ -1,0 +1,93 @@
+# ============================================================
+# Dockerfile.web — Multi-stage Next.js standalone build
+#
+# Stage 1 (deps):    Install all dependencies
+# Stage 2 (builder): next build with output: 'standalone'
+# Stage 3 (runner):  ~120MB image — only the standalone output
+#
+# Requires next.config.ts → output: 'standalone'
+# ============================================================
+
+# ---- Stage 1: Dependency installer ----
+FROM node:20-alpine AS deps
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+WORKDIR /app
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY apps/web/package.json           ./apps/web/
+COPY packages/shared/package.json    ./packages/shared/
+
+RUN pnpm install --frozen-lockfile
+
+
+# ---- Stage 2: Builder ----
+FROM node:20-alpine AS builder
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+WORKDIR /app
+
+COPY --from=deps /app/node_modules          ./node_modules
+COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
+
+COPY packages/shared                        ./packages/shared
+COPY apps/web                               ./apps/web
+COPY package.json pnpm-workspace.yaml       ./
+
+# Build-time public env vars must be injected here as ARGs so
+# Next.js can inline them at compile time (NEXT_PUBLIC_* variables).
+# They are NOT secrets — they are embedded in client JS.
+ARG NEXT_PUBLIC_API_URL=http://localhost:3001/api
+ARG NEXT_PUBLIC_WS_URL=http://localhost:3001
+ARG NEXT_PUBLIC_FIREBASE_API_KEY
+ARG NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+ARG NEXT_PUBLIC_FIREBASE_PROJECT_ID
+ARG NEXT_PUBLIC_FIREBASE_APP_ID
+ARG NEXT_PUBLIC_RAZORPAY_KEY_ID
+
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
+ENV NEXT_PUBLIC_FIREBASE_API_KEY=$NEXT_PUBLIC_FIREBASE_API_KEY
+ENV NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=$NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+ENV NEXT_PUBLIC_FIREBASE_PROJECT_ID=$NEXT_PUBLIC_FIREBASE_PROJECT_ID
+ENV NEXT_PUBLIC_FIREBASE_APP_ID=$NEXT_PUBLIC_FIREBASE_APP_ID
+ENV NEXT_PUBLIC_RAZORPAY_KEY_ID=$NEXT_PUBLIC_RAZORPAY_KEY_ID
+
+# Disable Next.js telemetry inside Docker
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN pnpm --filter @tradesim/web build
+
+
+# ---- Stage 3: Minimal runtime image ----
+FROM node:20-alpine AS runner
+
+# Security: non-root user (mirrors official Next.js Docker example)
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser  --system --uid 1001 nextjs
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+# Static assets and public files
+COPY --from=builder /app/apps/web/public ./public
+
+# Next.js standalone output includes its own server.js and
+# all required node_modules — no separate install needed.
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static     ./.next/static
+
+USER nextjs
+
+EXPOSE 3000
+
+# Readiness probe: checks the app is serving HTTP
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -qO- http://localhost:3000/ || exit 1
+
+# Next.js standalone entrypoint
+CMD ["node", "apps/web/server.js"]

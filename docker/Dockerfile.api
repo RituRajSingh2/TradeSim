@@ -1,39 +1,100 @@
-FROM node:20-alpine AS base
+# ============================================================
+# Dockerfile.api — Multi-stage production build
+#
+# Stage 1 (deps):     Install all dependencies
+# Stage 2 (builder):  Generate Prisma client + compile TypeScript
+# Stage 3 (pruner):   Install prod-only deps with pnpm deploy
+# Stage 4 (runner):   Minimal alpine image — only what's needed to run
+#
+# Result: ~200MB image vs ~800MB naive single-stage build
+# ============================================================
+
+# ---- Stage 1: Dependency installer ----
+FROM node:20-alpine AS deps
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 WORKDIR /app
 
-# Install dependencies
+# Copy only manifests first — maximises Docker layer cache hits.
+# Deps layer only rebuilds when lockfile or package.json files change.
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY apps/api/package.json ./apps/api/
-COPY packages/shared/package.json ./packages/shared/
+COPY apps/api/package.json           ./apps/api/
+COPY packages/shared/package.json    ./packages/shared/
 
-RUN pnpm install --frozen-lockfile --prod=false
+RUN pnpm install --frozen-lockfile
 
-# Copy source
-COPY packages/shared ./packages/shared
-COPY apps/api ./apps/api
 
-# Generate Prisma client
-RUN pnpm --filter @tradesim/api prisma generate
+# ---- Stage 2: Builder ----
+FROM node:20-alpine AS builder
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
-# Build
+WORKDIR /app
+
+COPY --from=deps /app/node_modules          ./node_modules
+COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
+
+# Copy source (after deps layer so source changes don't bust dep cache)
+COPY packages/shared                        ./packages/shared
+COPY apps/api                               ./apps/api
+COPY package.json pnpm-workspace.yaml       ./
+
+# Generate Prisma client targeting linux-musl (alpine)
+RUN pnpm --filter @tradesim/api exec prisma generate
+
+# Compile TypeScript → dist/
 RUN pnpm --filter @tradesim/api build
 
-# Production stage
-FROM node:20-alpine AS production
+
+# ---- Stage 3: Production deps only (pnpm deploy) ----
+FROM node:20-alpine AS prod-deps
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 WORKDIR /app
 
-COPY --from=base /app/node_modules ./node_modules
-COPY --from=base /app/apps/api/dist ./apps/api/dist
-COPY --from=base /app/apps/api/node_modules ./apps/api/node_modules
-COPY --from=base /app/apps/api/prisma ./apps/api/prisma
-COPY --from=base /app/apps/api/package.json ./apps/api/package.json
-COPY --from=base /app/packages/shared ./packages/shared
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY apps/api/package.json           ./apps/api/
+COPY packages/shared/package.json    ./packages/shared/
+
+# pnpm deploy creates a self-contained dir with prod deps only
+RUN pnpm install --frozen-lockfile --prod
+
+
+# ---- Stage 4: Minimal runtime image ----
+FROM node:20-alpine AS runner
+
+# Security: non-root user
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser  --system --uid 1001 nestjs
+
+WORKDIR /app
+
+# Copy prod node_modules
+COPY --from=prod-deps /app/node_modules          ./node_modules
+COPY --from=prod-deps /app/apps/api/node_modules ./apps/api/node_modules
+
+# Copy compiled output
+COPY --from=builder /app/apps/api/dist           ./apps/api/dist
+
+# Copy Prisma schema + migrations (needed for $connect and migrate at startup)
+COPY --from=builder /app/apps/api/prisma         ./apps/api/prisma
+
+# Copy shared package (source — used directly by @tradesim/api at runtime)
+COPY --from=builder /app/packages/shared         ./packages/shared
+
+# Copy package manifests (needed for workspace resolution)
+COPY --from=builder /app/apps/api/package.json   ./apps/api/package.json
+COPY --from=builder /app/package.json            ./package.json
+COPY --from=builder /app/pnpm-workspace.yaml     ./pnpm-workspace.yaml
+
+USER nestjs
 
 ENV NODE_ENV=production
+ENV PORT=3001
+
 EXPOSE 3001
+
+# Liveness probe: fast process check
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -qO- http://localhost:3001/health/live || exit 1
 
 CMD ["node", "apps/api/dist/main.js"]
