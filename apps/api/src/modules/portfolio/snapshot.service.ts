@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../database/prisma.service';
 import { LedgerRepository } from '../../database/ledger.repository';
@@ -16,8 +16,13 @@ import { PlatformEvent } from '@tradesim/shared';
 // ============================================================
 
 @Injectable()
-export class SnapshotService {
+export class SnapshotService implements OnApplicationShutdown {
   private readonly logger = new Logger(SnapshotService.name);
+  private isShuttingDown = false;
+
+  onApplicationShutdown() {
+    this.isShuttingDown = true;
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -64,6 +69,11 @@ export class SnapshotService {
       let hasMore = true;
 
       while (hasMore) {
+        if (this.isShuttingDown) {
+          this.logger.warn('Shutdown detected, aborting snapshot cron early.');
+          break;
+        }
+
         const portfolios = await this.prisma.portfolio.findMany({
           take: batchSize,
           ...(lastId && { skip: 1, cursor: { id: lastId } }),

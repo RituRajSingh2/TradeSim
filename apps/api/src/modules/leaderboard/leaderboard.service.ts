@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { PlatformEvent } from '@tradesim/shared';
@@ -9,8 +9,13 @@ export type Timeframe = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'all_time';
 export type Metric = 'return_percent' | 'realized_pnl' | 'win_rate';
 
 @Injectable()
-export class LeaderboardService {
+export class LeaderboardService implements OnApplicationShutdown {
   private readonly logger = new Logger(LeaderboardService.name);
+  private isShuttingDown = false;
+
+  onApplicationShutdown() {
+    this.isShuttingDown = true;
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -58,6 +63,11 @@ export class LeaderboardService {
       }
 
       while (hasMore) {
+        if (this.isShuttingDown) {
+          this.logger.warn('Shutdown detected, aborting leaderboard cron early.');
+          break;
+        }
+
         const users: any[] = await this.prisma.user.findMany({
           take: 1000,
           ...(lastCursor ? { skip: 1, cursor: { id: lastCursor } } : {}),

@@ -1,9 +1,10 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnApplicationShutdown, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaClient, Prisma } from '@prisma/client';
+import { PlatformEvent } from '@tradesim/shared';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService extends PrismaClient implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(PrismaService.name);
   private _isHealthy = false;
 
@@ -53,10 +54,14 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     }
   }
 
-  async onModuleDestroy(): Promise<void> {
+  async onApplicationShutdown(): Promise<void> {
     await this.$disconnect();
     this._isHealthy = false;
-    this.logger.log('Database disconnected');
+    this.logger.log({
+      eventType: PlatformEvent.APP_SHUTDOWN_COMPLETED,
+      message: 'Database disconnected gracefully',
+      metadata: { service: 'Prisma' }
+    });
   }
 
   /**

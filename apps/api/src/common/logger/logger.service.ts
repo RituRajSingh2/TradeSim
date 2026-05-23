@@ -27,7 +27,9 @@ const SEVERITY_MAPPING: Record<AllEvents, LogSeverity> = {
   [PlatformEvent.USER_LOGOUT]: LogSeverity.INFO,
   [PlatformEvent.USER_REGISTERED]: LogSeverity.INFO,
   [PlatformEvent.MARKET_PROVIDER_MOCK_ACTIVATED]: LogSeverity.INFO,
-  
+  [PlatformEvent.APP_SHUTDOWN_STARTED]: LogSeverity.INFO,
+  [PlatformEvent.APP_SHUTDOWN_COMPLETED]: LogSeverity.INFO,
+
   // WARN Events
   [PlatformEvent.ORDER_REJECTED_SLIPPAGE]: LogSeverity.WARN,
   [PlatformEvent.ORDER_REJECTED_STALE]: LogSeverity.WARN,
@@ -47,6 +49,7 @@ const SEVERITY_MAPPING: Record<AllEvents, LogSeverity> = {
   [PlatformEvent.WS_AUTH_FAILED]: LogSeverity.WARN,
   [PlatformEvent.AUTH_FAILED]: LogSeverity.WARN,
   [PlatformEvent.CRON_BATCH_FAILED]: LogSeverity.WARN,
+  [PlatformEvent.APP_SHUTDOWN_TIMEOUT]: LogSeverity.WARN,
 
   // ERROR Events
   [PlatformEvent.MARKET_PROVIDER_TRIPPED]: LogSeverity.ERROR,

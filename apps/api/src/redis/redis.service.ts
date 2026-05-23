@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
+import { Injectable, OnApplicationShutdown, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis, { RedisOptions } from 'ioredis';
 import { randomUUID } from 'crypto';
@@ -17,7 +17,7 @@ import { PlatformEvent } from '@tradesim/shared';
  * for subscribing and publishing.
  */
 @Injectable()
-export class RedisService implements OnModuleDestroy {
+export class RedisService implements OnApplicationShutdown {
   private readonly logger = new Logger(RedisService.name);
   private readonly client: Redis;
   private readonly redisUrl: string;
@@ -44,10 +44,14 @@ export class RedisService implements OnModuleDestroy {
     return this.client;
   }
 
-  async onModuleDestroy(): Promise<void> {
+  async onApplicationShutdown(): Promise<void> {
     if (this.client.status !== 'end') {
       await this.client.quit();
-      this.logger.log('Redis disconnected');
+      this.logger.log({
+        eventType: PlatformEvent.APP_SHUTDOWN_COMPLETED,
+        message: 'Redis disconnected gracefully',
+        metadata: { service: 'Redis' }
+      });
     }
   }
 

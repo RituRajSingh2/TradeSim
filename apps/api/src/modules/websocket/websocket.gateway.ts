@@ -9,7 +9,7 @@ import {
   ConnectedSocket,
   MessageBody,
 } from '@nestjs/websockets';
-import { UseFilters } from '@nestjs/common';
+import { UseFilters, OnApplicationShutdown } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -65,7 +65,7 @@ const AUTH_EXPIRE_GRACE_MS = 30_000;  // 30s grace period after JWT exp before d
 })
 @UseFilters(WsExceptionFilter)
 export class TradingGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnApplicationShutdown
 {
   @WebSocketServer()
   server!: Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -115,6 +115,21 @@ export class TradingGateway
       () => this.sweepExpiredSessions(),
       SESSION_SWEEP_INTERVAL_MS,
     );
+  }
+
+  onApplicationShutdown(signal?: string) {
+    this.logger.log({
+      eventType: PlatformEvent.APP_SHUTDOWN_STARTED,
+      message: `WebSocket Gateway received ${signal || 'shutdown'}. Draining connections...`,
+    });
+    
+    // Clear scheduled intervals
+    if (this.sessionSweepTimer) clearInterval(this.sessionSweepTimer);
+
+    // Disconnect all sockets to prevent reconnect storms or hanging connections
+    if (this.server) {
+      this.server.disconnectSockets(true);
+    }
   }
 
   // ============================================================
