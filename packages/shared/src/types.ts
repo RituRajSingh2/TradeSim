@@ -146,6 +146,8 @@ export interface StockQuote {
   change: number;
   changePercent: number;
   timestamp: number;
+  isStale?: boolean;
+  isMock?: boolean;
 }
 
 export interface OHLCVBar {

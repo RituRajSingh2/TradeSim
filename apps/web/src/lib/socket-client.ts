@@ -8,7 +8,8 @@ import type {
   WsWatchlistPricesPayload,
   WsChartCandlePayload
 } from '@tradesim/shared';
-import { WS_EVENTS } from '@tradesim/shared';
+import { WS_EVENTS, PlatformEvent } from '@tradesim/shared';
+import { logger } from './logger';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
 
@@ -58,7 +59,11 @@ class SocketManager {
     }) as TypedSocket;
 
     this.socket.on('connect', () => {
-      console.log('[WS] Connected:', this.socket?.id);
+      logger.info({
+        eventType: PlatformEvent.WS_CONNECT,
+        message: 'Socket connected',
+        metadata: { socketId: this.socket?.id }
+      });
       // Re-subscribe to previously subscribed stocks on reconnect
       this.subscribedStocks.forEach((symbol) => {
         this.socket?.emit(WS_EVENTS.SUBSCRIBE_STOCK, { symbol });
@@ -66,11 +71,19 @@ class SocketManager {
     });
 
     this.socket.on('disconnect', (reason) => {
-      console.log('[WS] Disconnected:', reason);
+      logger.info({
+        eventType: PlatformEvent.WS_DISCONNECT,
+        message: 'Socket disconnected',
+        metadata: { reason }
+      });
     });
 
     this.socket.on('connect_error', (error) => {
-      console.error('[WS] Connection error:', error.message);
+      logger.error({
+        eventType: PlatformEvent.WS_DEGRADED,
+        message: 'Socket connection error',
+        error: error
+      });
     });
 
     return this.socket;

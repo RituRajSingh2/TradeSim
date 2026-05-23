@@ -10,6 +10,7 @@ import { LockingRepository } from '../../database/locking.repository';
 import { LedgerRepository } from '../../database/ledger.repository';
 import { MarketService } from '../market/market.service';
 import { Prisma } from '@prisma/client';
+import { PlatformEvent } from '@tradesim/shared';
 
 // ============================================================
 // Trading Service — Order Execution Engine
@@ -96,6 +97,12 @@ export class TradingService {
 
     // 2. Begin transaction with pessimistic lock
     try {
+      this.logger.log({
+        eventType: PlatformEvent.ORDER_PLACED,
+        message: `Placing BUY order for ${symbol}`,
+        metadata: { symbol, quantity, side: 'BUY', expectedPrice }
+      });
+
       return await this.prisma.$transaction(async (tx) => {
       // 3. Lock portfolio
       const portfolio = await this.locking.lockPortfolio(tx, userId);
@@ -105,9 +112,18 @@ export class TradingService {
       const price = quote.ltp;
       const quoteTime = quote.timestamp > 100000000000 ? quote.timestamp : quote.timestamp * 1000;
       
-      // Validate freshness (max 5s old)
-      if (Date.now() - quoteTime > 5000) {
-        throw new NotAcceptableException('QUOTE_STALE: Market data is delayed. Please refresh.');
+      if (quote.isMock) {
+        throw new NotAcceptableException('SIMULATED_MARKET: Real trading is disabled while market data is simulated.');
+      }
+
+      // Validate freshness (max 30s old - critical threshold)
+      if (Date.now() - quoteTime > 30000) {
+        this.logger.warn({
+          eventType: PlatformEvent.ORDER_REJECTED_STALE,
+          message: 'Market data is too stale for execution',
+          metadata: { symbol, quoteTimestamp: quoteTime, quoteAge: Date.now() - quoteTime }
+        });
+        throw new NotAcceptableException('QUOTE_CRITICAL: Market data is too stale for execution. Trading disabled.');
       }
 
       // Validate slippage
@@ -116,6 +132,11 @@ export class TradingService {
       
       const slippagePercent = Math.abs(price - expectedPrice) / expectedPrice;
       if (slippagePercent > slippageTolerance) {
+        this.logger.warn({
+          eventType: PlatformEvent.ORDER_REJECTED_SLIPPAGE,
+          message: 'Order rejected due to slippage',
+          metadata: { symbol, expectedPrice, actualPrice: price, slippagePercent, tolerance: slippageTolerance }
+        });
         throw new NotAcceptableException(
           `PRICE_MOVED: Market price moved to ₹${price}. Please confirm new price.`
         );
@@ -126,6 +147,11 @@ export class TradingService {
       // 4. Check balance
       const currentBalance = Number(portfolio.balance);
       if (currentBalance < totalValue) {
+        this.logger.warn({
+          eventType: PlatformEvent.ORDER_REJECTED_FUNDS,
+          message: 'Insufficient balance for buy order',
+          metadata: { symbol, totalValue, currentBalance }
+        });
         throw new BadRequestException(
           `Insufficient balance. Required: ₹${totalValue}, Available: ₹${currentBalance}`,
         );
@@ -215,9 +241,21 @@ export class TradingService {
         },
       });
 
-      this.logger.log(
-        `BUY executed: ${userId} bought ${quantity}x ${symbol} @ ₹${price}`,
-      );
+      this.logger.log({
+        eventType: PlatformEvent.ORDER_EXECUTED,
+        message: `BUY executed: ${userId} bought ${quantity}x ${symbol} @ ₹${price}`,
+        metadata: {
+          orderId: order.id,
+          symbol,
+          side: 'BUY',
+          quantity,
+          executedPrice: price,
+          expectedPrice,
+          slippagePercent,
+          quoteTimestamp: quoteTime,
+          executionDuration: Date.now() - quoteTime,
+        }
+      });
 
       return {
         order: {
@@ -241,7 +279,11 @@ export class TradingService {
       }, { timeout: 10000, maxWait: 5000 });
     } catch (error: any) {
       if (error.code === 'P2002' && error.meta?.target?.includes('idempotency_key')) {
-        this.logger.warn(`Idempotency trigger: Duplicate buy order caught for key ${idempotencyKey}`);
+        this.logger.warn({
+          eventType: PlatformEvent.ORDER_IDEMPOTENCY_REPLAY,
+          message: `Idempotency trigger: Duplicate buy order caught for key ${idempotencyKey}`,
+          metadata: { idempotencyKey }
+        });
         
         // Replay-safe return
         const existingOrder = await this.prisma.order.findUnique({
@@ -306,6 +348,12 @@ export class TradingService {
 
     // 2. Begin transaction with pessimistic lock
     try {
+      this.logger.log({
+        eventType: PlatformEvent.ORDER_PLACED,
+        message: `Placing SELL order for ${symbol}`,
+        metadata: { symbol, quantity, side: 'SELL', expectedPrice }
+      });
+
       return await this.prisma.$transaction(async (tx) => {
       // 3. Lock portfolio
       const portfolio = await this.locking.lockPortfolio(tx, userId);
@@ -315,9 +363,18 @@ export class TradingService {
       const price = quote.ltp;
       const quoteTime = quote.timestamp > 100000000000 ? quote.timestamp : quote.timestamp * 1000;
       
-      // Validate freshness (max 5s old)
-      if (Date.now() - quoteTime > 5000) {
-        throw new NotAcceptableException('QUOTE_STALE: Market data is delayed. Please refresh.');
+      if (quote.isMock) {
+        throw new NotAcceptableException('SIMULATED_MARKET: Real trading is disabled while market data is simulated.');
+      }
+
+      // Validate freshness (max 30s old - critical threshold)
+      if (Date.now() - quoteTime > 30000) {
+        this.logger.warn({
+          eventType: PlatformEvent.ORDER_REJECTED_STALE,
+          message: 'Market data is too stale for execution',
+          metadata: { symbol, quoteTimestamp: quoteTime, quoteAge: Date.now() - quoteTime }
+        });
+        throw new NotAcceptableException('QUOTE_CRITICAL: Market data is too stale for execution. Trading disabled.');
       }
 
       // Validate slippage
@@ -326,6 +383,11 @@ export class TradingService {
       
       const slippagePercent = Math.abs(price - expectedPrice) / expectedPrice;
       if (slippagePercent > slippageTolerance) {
+        this.logger.warn({
+          eventType: PlatformEvent.ORDER_REJECTED_SLIPPAGE,
+          message: 'Order rejected due to slippage',
+          metadata: { symbol, expectedPrice, actualPrice: price, slippagePercent, tolerance: slippageTolerance }
+        });
         throw new NotAcceptableException(
           `PRICE_MOVED: Market price moved to ₹${price}. Please confirm new price.`
         );
@@ -343,6 +405,11 @@ export class TradingService {
       });
 
       if (!holding || holding.quantity < quantity) {
+        this.logger.warn({
+          eventType: PlatformEvent.ORDER_REJECTED_FUNDS,
+          message: 'Insufficient holdings for sell order',
+          metadata: { symbol, requiredQuantity: quantity, availableQuantity: holding?.quantity || 0 }
+        });
         throw new BadRequestException(
           `Insufficient holdings. You hold ${holding?.quantity || 0} shares of ${symbol}`,
         );
@@ -431,9 +498,21 @@ export class TradingService {
         },
       });
 
-      this.logger.log(
-        `SELL executed: ${userId} sold ${quantity}x ${symbol} @ ₹${price}`,
-      );
+      this.logger.log({
+        eventType: PlatformEvent.ORDER_EXECUTED,
+        message: `SELL executed: ${userId} sold ${quantity}x ${symbol} @ ₹${price}`,
+        metadata: {
+          orderId: order.id,
+          symbol,
+          side: 'SELL',
+          quantity,
+          executedPrice: price,
+          expectedPrice,
+          slippagePercent,
+          quoteTimestamp: quoteTime,
+          executionDuration: Date.now() - quoteTime,
+        }
+      });
 
       return {
         order: {
@@ -457,7 +536,11 @@ export class TradingService {
       }, { timeout: 10000, maxWait: 5000 });
     } catch (error: any) {
       if (error.code === 'P2002' && error.meta?.target?.includes('idempotency_key')) {
-        this.logger.warn(`Idempotency trigger: Duplicate sell order caught for key ${idempotencyKey}`);
+        this.logger.warn({
+          eventType: PlatformEvent.ORDER_IDEMPOTENCY_REPLAY,
+          message: `Idempotency trigger: Duplicate sell order caught for key ${idempotencyKey}`,
+          metadata: { idempotencyKey }
+        });
         
         // Replay-safe return
         const existingOrder = await this.prisma.order.findUnique({

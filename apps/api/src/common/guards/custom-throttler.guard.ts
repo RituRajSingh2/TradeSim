@@ -2,6 +2,7 @@ import { Injectable, ExecutionContext } from '@nestjs/common';
 import { ThrottlerGuard, ThrottlerException } from '@nestjs/throttler';
 import { PlatformLogger } from '../logger/logger.service';
 import { Request } from 'express';
+import { PlatformEvent } from '@tradesim/shared';
 
 @Injectable()
 export class CustomThrottlerGuard extends ThrottlerGuard {
@@ -11,8 +12,8 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     const req = context.switchToHttp().getRequest<Request>();
     
     this.platformLogger.warn({
+      eventType: PlatformEvent.RATE_LIMIT_EXCEEDED,
       message: `Rate limit exceeded for IP: ${req.ip} on ${req.method} ${req.url}`,
-      eventType: 'RATE_LIMIT_EXCEEDED',
       metadata: {
         ip: req.ip,
         method: req.method,

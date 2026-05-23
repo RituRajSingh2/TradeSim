@@ -5,6 +5,7 @@ import { LedgerRepository } from '../../database/ledger.repository';
 import { PortfolioService } from './portfolio.service';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
 import { RedisService } from '../../redis/redis.service';
+import { PlatformEvent } from '@tradesim/shared';
 
 // ============================================================
 // Snapshot Service — EOD Portfolio Snapshots for Leaderboard
@@ -35,7 +36,11 @@ export class SnapshotService {
     timeZone: 'UTC',
   })
   async generateDailySnapshots() {
-    this.logger.log('📸 Starting EOD portfolio snapshot generation...');
+    this.logger.log({
+      eventType: PlatformEvent.CRON_STARTED,
+      message: 'Starting EOD portfolio snapshot generation...',
+      metadata: { cron: 'eod-portfolio-snapshot' }
+    });
 
     const lockToken = await this.redisService.acquireLock('cron:eod_snapshot', 3600);
     if (!lockToken) {
@@ -131,11 +136,13 @@ export class SnapshotService {
           });
 
           processed++;
-        } catch (error) {
+        } catch (error: any) {
           errors++;
-          this.logger.error(
-            `Snapshot failed for user ${portfolio.userId}: ${error}`,
-          );
+          this.logger.warn({
+            eventType: PlatformEvent.CRON_BATCH_FAILED,
+            message: `Snapshot failed for user ${portfolio.userId}`,
+            metadata: { userId: portfolio.userId, error: String(error) }
+          });
         }
       }
 
@@ -144,9 +151,11 @@ export class SnapshotService {
     }
 
       const elapsed = Date.now() - startTime;
-      this.logger.log(
-        `📸 EOD snapshots complete: ${processed} created, ${skipped} skipped, ${errors} errors (${elapsed}ms)`,
-      );
+      this.logger.log({
+        eventType: PlatformEvent.CRON_SNAPSHOT_GENERATED,
+        message: `EOD snapshots complete: ${processed} created, ${skipped} skipped, ${errors} errors`,
+        metadata: { processed, skipped, errors, durationMs: elapsed }
+      });
 
       // Orchestrate leaderboard if successful
       if (errors === 0) {
@@ -158,8 +167,12 @@ export class SnapshotService {
       } else {
         this.logger.error('📸 Snapshots had errors. Bypassing Leaderboard generation to prevent rank corruption.');
       }
-    } catch (error) {
-      this.logger.error(`EOD snapshot job failed: ${error}`);
+    } catch (error: any) {
+      this.logger.error({
+        eventType: PlatformEvent.CRON_BATCH_FAILED,
+        message: 'EOD snapshot job failed',
+        metadata: { error: String(error) }
+      });
     } finally {
       await this.redisService.releaseLock('cron:eod_snapshot', lockToken);
       this.logger.log('🔒 Released snapshot lock.');

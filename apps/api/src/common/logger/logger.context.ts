@@ -4,6 +4,8 @@ export interface RequestContext {
   requestId?: string;
   userId?: string;
   socketId?: string;
+  sessionId?: string;
+  idempotencyKey?: string;
   executionId?: string;
 }
 

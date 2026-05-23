@@ -13,6 +13,7 @@ import {
   REFERRAL_BONUS,
   REDIS_KEYS,
   generateReferralCode,
+  PlatformEvent,
 } from '@tradesim/shared';
 import type {
   VerifyOtpRequest,
@@ -63,7 +64,11 @@ export class AuthService {
     if (!user) {
       isNewUser = true;
       user = await this.createUser(phone, uid, dto.referralCode);
-      this.logger.log(`New user created: ${phone}`);
+      this.logger.log({
+        eventType: PlatformEvent.AUTH_SUCCESS,
+        message: `New user created: ${phone}`,
+        metadata: { userId: user.id, isNewUser: true }
+      });
     } else {
       // Update login metadata (and Firebase UID if changed)
       const updateData: { lastLoginAt: Date; firebaseUid?: string } = {
@@ -148,7 +153,11 @@ export class AuthService {
     if (!session) {
       // Token reuse detected — likely a stolen token replay.
       // Kill ALL sessions for this user as a precaution.
-      this.logger.warn(`Refresh token reuse detected for user ${payload.sub}`);
+      this.logger.warn({
+        eventType: PlatformEvent.AUTH_FAILED,
+        message: `Refresh token reuse detected for user ${payload.sub}`,
+        metadata: { userId: payload.sub }
+      });
       await this.prisma.session.deleteMany({ where: { userId: payload.sub } });
       await this.redis.del(REDIS_KEYS.userSession(payload.sub));
       throw new UnauthorizedException('Session invalidated — please login again');
@@ -197,7 +206,11 @@ export class AuthService {
   ): Promise<void> {
     if (allDevices) {
       await this.prisma.session.deleteMany({ where: { userId } });
-      this.logger.log(`All sessions invalidated for user ${userId}`);
+      this.logger.log({
+        eventType: PlatformEvent.USER_LOGOUT,
+        message: `All sessions invalidated for user ${userId}`,
+        metadata: { userId }
+      });
     } else if (refreshToken) {
       await this.prisma.session.deleteMany({
         where: { userId, refreshToken },

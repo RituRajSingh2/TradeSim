@@ -25,6 +25,10 @@ import {
 } from './socket';
 import { useAuthStore } from '@/stores/auth-store';
 import { tokenService } from '@/lib/token-service';
+import { socketManager } from '@/lib/socket-client';
+import { logger } from '@/lib/logger';
+import { PlatformEvent } from '@tradesim/shared';
+import { toast } from 'sonner';
 
 export type SocketStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -70,7 +74,12 @@ export function useSocket(): UseSocketReturn {
     };
 
     const handleAuthExpired = async (payload: { reason: string; message: string }) => {
-      console.warn(`Socket auth expired: ${payload.reason}`);
+      logger.warn({
+        eventType: PlatformEvent.WS_AUTH_EXPIRED,
+        message: `Socket auth expired: ${payload.reason}`,
+        metadata: payload
+      });
+      toast.error('Session expired. Attempting to refresh...', { id: 'ws-auth' });
       
       // Prevent rapid concurrent reconnect attempts
       if (isSocketReconnecting() || !isMounted) return;
@@ -81,7 +90,13 @@ export function useSocket(): UseSocketReturn {
         const newAccessToken = await tokenService.refreshTokens();
         
         if (newAccessToken && isMounted) {
-          console.log('Socket token refreshed. Reconnecting...');
+          logger.info({
+            eventType: PlatformEvent.WS_AUTH_REFRESH,
+            message: 'Socket token refreshed. Reconnecting...'
+          });
+
+          // Disconnect the old socket and reconnect with new token
+          socketManager.disconnect();
           destroySocket(); // Clean up old listeners and socket
           
           sock = getSocket(newAccessToken);
@@ -97,7 +112,12 @@ export function useSocket(): UseSocketReturn {
           throw new Error('Refresh failed');
         }
       } catch (error) {
-        console.error('Socket token refresh failed. Forcing logout.', error);
+        logger.error({
+          eventType: PlatformEvent.WS_AUTH_FAILED,
+          message: 'Socket token refresh failed. Forcing logout.',
+          error: error instanceof Error ? error : new Error(String(error))
+        });
+        toast.error('Session expired. Please sign in again.');
         if (isMounted) {
           logout();
         }

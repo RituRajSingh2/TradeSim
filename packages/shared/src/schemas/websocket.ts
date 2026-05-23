@@ -14,6 +14,7 @@
 
 import { z } from 'zod/v4';
 import { OrderSideSchema, OrderStatusSchema } from './trading';
+import { StalenessSchema } from './market';
 
 // ============================================================
 // EVENT NAME CONSTANTS
@@ -103,6 +104,8 @@ export const WsStockPricePayloadSchema = z.object({
   change: z.number(),
   changePercent: z.number(),
   timestamp: z.number(),
+  staleness: StalenessSchema.optional(),
+  isMock: z.boolean().optional(),
 });
 export type WsStockPricePayload = z.infer<typeof WsStockPricePayloadSchema>;
 
@@ -112,6 +115,8 @@ export const WsWatchlistPriceItemSchema = z.object({
   ltp: z.number(),
   change: z.number(),
   changePercent: z.number(),
+  staleness: StalenessSchema.optional(),
+  isMock: z.boolean().optional(),
 });
 export type WsWatchlistPriceItem = z.infer<typeof WsWatchlistPriceItemSchema>;
 

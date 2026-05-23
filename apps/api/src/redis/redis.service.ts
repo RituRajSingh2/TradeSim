@@ -2,6 +2,7 @@ import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis, { RedisOptions } from 'ioredis';
 import { randomUUID } from 'crypto';
+import { PlatformEvent } from '@tradesim/shared';
 
 /**
  * Redis service providing caching, pub/sub, and atomic operations.
@@ -87,7 +88,11 @@ export class RedisService implements OnModuleDestroy {
     try {
       return JSON.parse(raw) as T;
     } catch {
-      this.logger.warn(`Failed to parse JSON for key: ${key}`);
+      this.logger.warn({
+        eventType: PlatformEvent.REDIS_CACHE_FAILURE,
+        message: `Failed to parse JSON for key: ${key}`,
+        metadata: { key }
+      });
       return null;
     }
   }
@@ -138,6 +143,11 @@ export class RedisService implements OnModuleDestroy {
     if (result === 'OK') {
       return token;
     }
+    this.logger.error({
+      eventType: PlatformEvent.REDIS_LOCK_FAILED,
+      message: `Failed to acquire lock for key: ${key}`,
+      metadata: { key, ttlSeconds }
+    });
     return null;
   }
 
@@ -196,11 +206,19 @@ export class RedisService implements OnModuleDestroy {
       maxRetriesPerRequest: 3,
       retryStrategy: (times) => {
         if (times > 5) {
-          this.logger.error(`Redis [${label}] — giving up after ${times} retries`);
+          this.logger.error({
+            eventType: PlatformEvent.REDIS_PUBSUB_FAILURE, // Or general reconnect failure
+            message: `Redis [${label}] — giving up after ${times} retries`,
+            metadata: { times, label }
+          });
           return null;
         }
         const delay = Math.min(times * 200, 3000);
-        this.logger.warn(`Redis [${label}] — retry #${times} in ${delay}ms`);
+        this.logger.warn({
+          eventType: PlatformEvent.REDIS_RECONNECT,
+          message: `Redis [${label}] — retry #${times} in ${delay}ms`,
+          metadata: { times, delayMs: delay, label }
+        });
         return delay;
       },
       // Upstash uses rediss:// (TLS). Detect and enable automatically.
@@ -216,7 +234,11 @@ export class RedisService implements OnModuleDestroy {
 
     connection.on('error', (err) => {
       this._isHealthy = false;
-      this.logger.error(`Redis [${label}] error: ${err.message}`);
+      this.logger.error({
+        eventType: PlatformEvent.REDIS_PUBSUB_FAILURE,
+        message: `Redis [${label}] error: ${err.message}`,
+        metadata: { error: err.message, label }
+      });
     });
 
     connection.on('close', () => {

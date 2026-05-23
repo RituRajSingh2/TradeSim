@@ -7,6 +7,6 @@ import { MarketModule } from '../market/market.module';
 @Module({
   imports: [MarketModule],
   providers: [TradingGateway, SubscriptionManager, PriceBroadcaster],
-  exports: [TradingGateway],
+  exports: [TradingGateway, SubscriptionManager],
 })
 export class WebsocketModule {}

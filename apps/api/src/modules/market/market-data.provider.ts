@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 // ============================================================
 // Market Data Provider — Abstraction over price data sources
@@ -225,25 +224,4 @@ export class MockMarketProvider implements MarketDataProvider {
   }
 }
 
-// ============================================================
-// Provider Factory — Selects implementation based on env
-// ============================================================
-
-export const MARKET_DATA_PROVIDER = 'MARKET_DATA_PROVIDER';
-
-export const MarketDataProviderFactory = {
-  provide: MARKET_DATA_PROVIDER,
-  inject: [ConfigService],
-  useFactory: (config: ConfigService): MarketDataProvider => {
-    const provider = config.get<string>('marketData.provider', 'mock');
-    const logger = new Logger('MarketDataProviderFactory');
-
-    if (provider === 'yahoo') {
-      logger.log('📈 Using Yahoo Finance market data provider');
-      return new YahooFinanceProvider();
-    }
-
-    logger.log('🧪 Using Mock market data provider');
-    return new MockMarketProvider();
-  },
-};
+// End of file

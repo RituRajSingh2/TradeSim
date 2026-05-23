@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
+import { PlatformEvent } from '@tradesim/shared';
 
 const LEADERBOARD_PREFIX = 'leaderboard:';
 
@@ -21,7 +22,11 @@ export class LeaderboardService {
    * Orchestrated to run AFTER the EOD Portfolio Snapshot finishes.
    */
   async generateRankings() {
-    this.logger.log('🏆 Starting Leaderboard ZSET generation...');
+    this.logger.log({
+      eventType: PlatformEvent.CRON_STARTED,
+      message: 'Starting Leaderboard ZSET generation...',
+      metadata: { cron: 'leaderboard' }
+    });
 
     const lockToken = await this.redis.acquireLock('cron:leaderboard', 3600);
     if (!lockToken) {
@@ -157,9 +162,17 @@ export class LeaderboardService {
       }
 
       const elapsed = Date.now() - startTime;
-      this.logger.log(`🏆 Leaderboards generated successfully! Evaluated ${totalEvaluated} users, ${eligibleCount} eligible. Took ${elapsed}ms.`);
-    } catch (error) {
-      this.logger.error(`Leaderboard generation failed: ${error}`);
+      this.logger.log({
+        eventType: PlatformEvent.CRON_LEADERBOARD_REFRESHED,
+        message: `Leaderboards generated successfully! Evaluated ${totalEvaluated} users, ${eligibleCount} eligible.`,
+        metadata: { totalEvaluated, eligibleCount, durationMs: elapsed }
+      });
+    } catch (error: any) {
+      this.logger.error({
+        eventType: PlatformEvent.CRON_BATCH_FAILED,
+        message: 'Leaderboard generation failed',
+        metadata: { error: String(error) }
+      });
     } finally {
       await this.redis.releaseLock('cron:leaderboard', lockToken);
       this.logger.log('🔒 Released leaderboard lock.');

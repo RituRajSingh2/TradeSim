@@ -1,33 +1,115 @@
 import { ConsoleLogger, Injectable, LogLevel } from '@nestjs/common';
 import { getRequestContext } from './logger.context';
+import { AllEvents, PlatformEvent, MetricEvent, LogSeverity } from '@tradesim/shared';
 
 export interface LogPayload {
-  eventType?: string;
+  eventType?: AllEvents;
   message: string;
   metadata?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
+const SEVERITY_MAPPING: Record<AllEvents, LogSeverity> = {
+  // INFO Events
+  [PlatformEvent.ORDER_PLACED]: LogSeverity.INFO,
+  [PlatformEvent.ORDER_EXECUTED]: LogSeverity.INFO,
+  [PlatformEvent.WS_CONNECT]: LogSeverity.INFO,
+  [PlatformEvent.WS_DISCONNECT]: LogSeverity.INFO,
+  [PlatformEvent.WS_SUBSCRIBE]: LogSeverity.INFO,
+  [PlatformEvent.WS_UNSUBSCRIBE]: LogSeverity.INFO,
+  [PlatformEvent.WS_AUTH_REFRESH]: LogSeverity.INFO,
+  [PlatformEvent.CRON_STARTED]: LogSeverity.INFO,
+  [PlatformEvent.CRON_COMPLETED]: LogSeverity.INFO,
+  [PlatformEvent.CRON_SNAPSHOT_GENERATED]: LogSeverity.INFO,
+  [PlatformEvent.CRON_LEADERBOARD_REFRESHED]: LogSeverity.INFO,
+  [PlatformEvent.APP_EVENT]: LogSeverity.INFO,
+  [PlatformEvent.AUTH_SUCCESS]: LogSeverity.INFO,
+  [PlatformEvent.USER_LOGOUT]: LogSeverity.INFO,
+  [PlatformEvent.USER_REGISTERED]: LogSeverity.INFO,
+  [PlatformEvent.MARKET_PROVIDER_MOCK_ACTIVATED]: LogSeverity.INFO,
+  
+  // WARN Events
+  [PlatformEvent.ORDER_REJECTED_SLIPPAGE]: LogSeverity.WARN,
+  [PlatformEvent.ORDER_REJECTED_STALE]: LogSeverity.WARN,
+  [PlatformEvent.ORDER_REJECTED_FUNDS]: LogSeverity.WARN,
+  [PlatformEvent.ORDER_IDEMPOTENCY_REPLAY]: LogSeverity.WARN,
+  [PlatformEvent.ORDER_OPTIMISTIC_ROLLBACK]: LogSeverity.WARN,
+  [PlatformEvent.WS_AUTH_EXPIRED]: LogSeverity.WARN,
+  [PlatformEvent.WS_RECONNECT_ABUSE]: LogSeverity.WARN,
+  [PlatformEvent.WS_DEGRADED]: LogSeverity.WARN,
+  [PlatformEvent.WS_SESSION_EXPIRED]: LogSeverity.WARN,
+  [PlatformEvent.MARKET_PROVIDER_FAILOVER]: LogSeverity.WARN,
+  [PlatformEvent.MARKET_DATA_STALE]: LogSeverity.WARN,
+  [PlatformEvent.MARKET_PROVIDER_LATENCY_SPIKE]: LogSeverity.WARN,
+  [PlatformEvent.REDIS_RECONNECT]: LogSeverity.WARN,
+  [PlatformEvent.RATE_LIMIT_EXCEEDED]: LogSeverity.WARN,
+  [PlatformEvent.INVALID_TOKEN]: LogSeverity.WARN,
+  [PlatformEvent.WS_AUTH_FAILED]: LogSeverity.WARN,
+  [PlatformEvent.AUTH_FAILED]: LogSeverity.WARN,
+  [PlatformEvent.CRON_BATCH_FAILED]: LogSeverity.WARN,
+
+  // ERROR Events
+  [PlatformEvent.MARKET_PROVIDER_TRIPPED]: LogSeverity.ERROR,
+  [PlatformEvent.MARKET_DATA_FETCH_FAILED]: LogSeverity.ERROR,
+  [PlatformEvent.REDIS_LOCK_FAILED]: LogSeverity.ERROR,
+  [PlatformEvent.REDIS_CACHE_FAILURE]: LogSeverity.ERROR,
+  [PlatformEvent.REDIS_PUBSUB_FAILURE]: LogSeverity.ERROR,
+  [PlatformEvent.ADMIN_ACCESS_DENIED]: LogSeverity.ERROR,
+
+  // Metric Events (INFO by default)
+  [MetricEvent.METRIC_WS_CONNECTION_COUNT]: LogSeverity.INFO,
+  [MetricEvent.METRIC_PROVIDER_FAILOVER_COUNT]: LogSeverity.INFO,
+  [MetricEvent.METRIC_STALE_QUOTE_COUNT]: LogSeverity.INFO,
+  [MetricEvent.METRIC_ORDER_REJECTION_RATE]: LogSeverity.INFO,
+  [MetricEvent.METRIC_REDIS_LOCK_CONTENTION]: LogSeverity.INFO,
+};
+
+const SENSITIVE_KEYS = new Set([
+  'password', 'token', 'jwt', 'authorization', 'cookie', 
+  'secret', 'otp', 'refreshToken', 'accessToken'
+]);
+
 @Injectable()
 export class PlatformLogger extends ConsoleLogger {
   private isProduction = process.env.NODE_ENV === 'production';
+  private schemaVersion = '1.0';
 
   constructor(context?: string) {
     super(context || 'App');
   }
 
-  // --- Sampling Logic ---
-  // Sample highly noisy INFO events (e.g., 10% sampling)
-  private shouldSample(level: LogLevel, eventType?: string): boolean {
-    if (level === 'warn' || level === 'error' || level === 'fatal') return true; // Never sample warnings/errors
-    
-    const noisyEvents = ['WS_HEARTBEAT', 'WS_TICK_UPDATE', 'WS_RECONNECT'];
-    if (eventType && noisyEvents.includes(eventType)) {
-      // 10% sampling rate for noisy events
-      return Math.random() < 0.10;
+  // Deeply scrub sensitive data, but shallowly serialize metadata to avoid deep recursion
+  private scrubObject(obj: any, depth = 0, maxDepth = 2): any {
+    if (depth >= maxDepth) return '[Truncated]';
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) {
+      return obj.slice(0, 10).map(item => this.scrubObject(item, depth + 1, maxDepth));
     }
-    
-    return true; // Log everything else
+
+    const scrubbed: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (SENSITIVE_KEYS.has(key.toLowerCase()) || key.toLowerCase().includes('password') || key.toLowerCase().includes('token')) {
+        scrubbed[key] = '[REDACTED]';
+      } else {
+        scrubbed[key] = this.scrubObject(value, depth + 1, maxDepth);
+      }
+    }
+    return scrubbed;
+  }
+
+  private shouldSample(eventType?: AllEvents): boolean {
+    const noisyEvents: AllEvents[] = [PlatformEvent.WS_SUBSCRIBE, PlatformEvent.WS_UNSUBSCRIBE];
+    if (eventType && noisyEvents.includes(eventType)) {
+      return Math.random() < 0.10; // 10% sampling
+    }
+    return true; 
+  }
+
+  private enforceSeverity(originalLevel: LogLevel, eventType?: AllEvents): string {
+    if (!eventType) return originalLevel.toUpperCase();
+    const forcedSeverity = SEVERITY_MAPPING[eventType];
+    return forcedSeverity ? forcedSeverity.toUpperCase() : originalLevel.toUpperCase();
   }
 
   private formatJsonLog(level: LogLevel, message: any, context?: string): string {
@@ -39,7 +121,6 @@ export class PlatformLogger extends ConsoleLogger {
     if (typeof message === 'string') {
       payload.message = message;
     } else if (typeof message === 'object' && message !== null) {
-      // Extract specific fields if it's our custom LogPayload
       const { message: msg, eventType, metadata, ...rest } = message;
       payload = {
         message: msg || 'No message provided',
@@ -48,21 +129,28 @@ export class PlatformLogger extends ConsoleLogger {
       };
     }
 
-    if (!this.shouldSample(level, payload.eventType)) {
+    if (!this.shouldSample(payload.eventType)) {
       return ''; // Sampled out
     }
 
+    const actualSeverity = this.enforceSeverity(level, payload.eventType);
+
     const logEntry = {
+      schemaVersion: this.schemaVersion,
+      env: process.env.NODE_ENV || 'development',
+      buildId: process.env.BUILD_ID || 'dev',
       timestamp,
-      level: level.toUpperCase(),
+      level: actualSeverity,
       requestId: ctx.requestId || undefined,
-      userId: ctx.userId || undefined,
+      sessionId: ctx.sessionId || undefined,
       socketId: ctx.socketId || undefined,
+      userId: ctx.userId || undefined,
+      idempotencyKey: ctx.idempotencyKey || undefined,
       executionId: ctx.executionId || undefined,
       context: context || this.context,
-      eventType: payload.eventType || 'APP_EVENT',
+      eventType: payload.eventType || PlatformEvent.APP_EVENT,
       message: payload.message,
-      metadata: Object.keys(payload.metadata || {}).length > 0 ? payload.metadata : undefined,
+      metadata: payload.metadata ? this.scrubObject(payload.metadata) : undefined,
     };
 
     return JSON.stringify(logEntry);

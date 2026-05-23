@@ -3,6 +3,7 @@
 // ============================================
 
 import { CURRENCY_SYMBOL } from './constants';
+import type { Staleness } from './schemas/market';
 
 /**
  * Format a number as Indian currency (₹1,23,456.78)
@@ -144,4 +145,21 @@ export function sleep(ms: number): Promise<void> {
  */
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * Deterministic priorities for market data staleness severity
+ */
+export const STALENESS_PRIORITY: Record<Staleness, number> = {
+  fresh: 0,
+  delayed: 1,
+  critical: 2,
+  expired: 3,
+};
+
+/**
+ * Compare two staleness tiers and return the most degraded (worst) one.
+ */
+export function getWorstStaleness(a: Staleness, b: Staleness): Staleness {
+  return STALENESS_PRIORITY[a] >= STALENESS_PRIORITY[b] ? a : b;
 }

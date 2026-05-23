@@ -5,6 +5,9 @@
 // Zod schemas (source of truth for types)
 export * from './schemas';
 
+// Logging
+export * from './logging/events';
+
 // Transport-agnostic adapters
 export * from './adapters';
 

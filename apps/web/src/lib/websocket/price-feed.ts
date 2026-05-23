@@ -1,5 +1,6 @@
-import { WsStockPricePayload, WsWatchlistPricesPayload, WsChartCandlePayload } from '@tradesim/shared';
+import { WsStockPricePayload, WsWatchlistPricesPayload, Staleness, getWorstStaleness } from '@tradesim/shared';
 import { socketManager } from '../socket-client';
+import { useMarketHealthStore } from '@/stores/market-health-store';
 
 export interface PriceFeedData {
   quote?: WsStockPricePayload;
@@ -31,7 +32,27 @@ class PriceFeed {
     this.cache.set(symbol, { quote: newData, version: newVersion });
     
     this.enforceCacheLimit();
+    this.updateGlobalHealth();
     this.notifyListeners(symbol);
+  }
+
+  private updateGlobalHealth() {
+    let worstStaleness: Staleness = 'fresh';
+    let anyMock = false;
+
+    // Evaluate health across all currently cached/active symbols
+    for (const [_, data] of this.cache.entries()) {
+      if (!data.quote) continue;
+      
+      if (data.quote.staleness) {
+        worstStaleness = getWorstStaleness(worstStaleness, data.quote.staleness);
+      }
+      if (data.quote.isMock) {
+        anyMock = true;
+      }
+    }
+
+    useMarketHealthStore.getState().updateHealth(worstStaleness, anyMock);
   }
 
   private handleStockPrice(payload: WsStockPricePayload) {
@@ -59,6 +80,8 @@ class PriceFeed {
         close: currentQuote.close ?? 0,
         volume: currentQuote.volume ?? 0,
         timestamp: Date.now(), // Estimate timestamp
+        staleness: item.staleness,
+        isMock: item.isMock,
       };
 
       this.incrementVersion(item.symbol, updatedQuote);

@@ -15,6 +15,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
+import { PlatformLogger } from '../../common/logger/logger.service';
 import { JwtAuthGuard, type JwtPayload } from '../../common/guards/auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -24,6 +25,7 @@ import {
   LogoutRequestSchema,
   type VerifyOtpRequest,
   type LogoutRequest,
+  PlatformEvent,
 } from '@tradesim/shared';
 
 const REFRESH_TOKEN_COOKIE = 'tradesim_refresh';
@@ -33,7 +35,10 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
-  ) {}
+    private readonly logger: PlatformLogger,
+  ) {
+    this.logger.setContext(AuthController.name);
+  }
 
   /**
    * POST /api/auth/login
@@ -54,16 +59,25 @@ export class AuthController {
       ipAddress: req.ip || req.socket.remoteAddress,
     };
 
-    const result = await this.authService.verifyAndLogin(body, device);
+    try {
+      const result = await this.authService.verifyAndLogin(body, device);
 
-    // Set refresh token in httpOnly cookie (not accessible via JS)
-    this.setRefreshCookie(res, result.tokens.refreshToken);
+      // Set refresh token in httpOnly cookie (not accessible via JS)
+      this.setRefreshCookie(res, result.tokens.refreshToken);
 
-    // Return only the access token in the response body
-    return {
-      user: result.user,
-      accessToken: result.tokens.accessToken,
-    };
+      // Return only the access token in the response body
+      return {
+        user: result.user,
+        accessToken: result.tokens.accessToken,
+      };
+    } catch (error: any) {
+      this.logger.warn({
+        eventType: PlatformEvent.AUTH_FAILED,
+        message: `Login failed: ${error.message}`,
+        metadata: { ip: device.ipAddress, error: error.message }
+      });
+      throw error;
+    }
   }
 
   /**
@@ -85,6 +99,11 @@ export class AuthController {
       // Fallback: accept from body for mobile clients
       const bodyToken = req.body?.refreshToken;
       if (!bodyToken) {
+        this.logger.warn({
+          eventType: PlatformEvent.INVALID_TOKEN,
+          message: 'No refresh token provided in body or cookie',
+          metadata: { ip: req.ip }
+        });
         throw new UnauthorizedException('No refresh token provided');
       }
 

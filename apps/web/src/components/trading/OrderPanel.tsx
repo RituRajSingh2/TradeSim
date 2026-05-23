@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useStockPrice } from '@/lib/websocket/use-stock-price';
 import { usePortfolioStore } from '@/stores/portfolio-store';
+import { useMarketHealthStore } from '@/stores/market-health-store';
 import { apiPost } from '@/lib/api-client';
 import type { PlaceOrderRequest, OrderSide } from '@tradesim/shared';
 
@@ -13,7 +14,8 @@ interface OrderPanelProps {
 }
 
 export function OrderPanel({ symbol, className }: OrderPanelProps) {
-  const { quote, isStale } = useStockPrice(symbol);
+  const { quote } = useStockPrice(symbol);
+  const { globalStaleness, isSimulated } = useMarketHealthStore();
   const { executeOrderOptimistically, getEffectiveBuyingPower, getEffectiveHoldingQuantity } = usePortfolioStore();
 
   const [side, setSide] = useState<OrderSide>('BUY');
@@ -37,10 +39,14 @@ export function OrderPanel({ symbol, className }: OrderPanelProps) {
       return;
     }
 
-    // Stale price check (reject if tick is older than 5000ms)
-    const now = Date.now();
-    if (isStale || (now - quote.timestamp > 5000)) {
-      setErrorMsg('Price data is stale (> 5s). Market orders blocked.');
+    // Stale price check using global single source of truth
+    if (globalStaleness === 'critical' || globalStaleness === 'expired') {
+      setErrorMsg('Price data is critically stale. Trading blocked.');
+      return;
+    }
+    
+    if (isSimulated) {
+      setErrorMsg('Real trading is disabled while market data is simulated.');
       return;
     }
 
@@ -190,7 +196,7 @@ export function OrderPanel({ symbol, className }: OrderPanelProps) {
 
         <button
           onClick={handleExecute}
-          disabled={isPending || hasInsufficientFunds || hasInsufficientHoldings || lastPrice <= 0}
+          disabled={isPending || hasInsufficientFunds || hasInsufficientHoldings || lastPrice <= 0 || globalStaleness === 'critical' || globalStaleness === 'expired' || isSimulated}
           className={cn(
             "w-full h-12 rounded font-bold text-bg-primary transition-colors flex items-center justify-center",
             side === 'BUY' 

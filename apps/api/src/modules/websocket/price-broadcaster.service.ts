@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { Server } from 'socket.io';
 import { MarketService } from '../market/market.service';
 import { SubscriptionManager } from './subscription-manager';
-import type { StockQuote } from '../market/market-data.provider';
+import type { ResilientStockQuote } from '../market/provider-manager';
 import { WS_EVENTS } from '@tradesim/shared';
 
 // ============================================================
@@ -26,15 +26,15 @@ export class PriceBroadcaster implements OnModuleInit, OnModuleDestroy {
   private server: Server | null = null;
 
   /** Symbol → latest quote (in-memory cache) */
-  private readonly latestQuotes = new Map<string, StockQuote>();
+  private readonly latestQuotes = new Map<string, ResilientStockQuote>();
 
-  /** Symbol → last broadcasted timestamp (to prevent duplicate emissions in the 250ms loop) */
-  private readonly lastBroadcastedQuotes = new Map<string, number>();
+  /** Symbol → last broadcasted cache key (timestamp:staleness) to prevent duplicate emissions */
+  private readonly lastBroadcastedQuotes = new Map<string, string>();
 
   /** Client → last-sent quote per symbol (for delta computation) */
   private readonly lastSentSnapshots = new Map<
     string,
-    Map<string, { ltp: number; timestamp: number }>
+    Map<string, { ltp: number; timestamp: number; staleness?: string }>
   >();
 
   /** Central poll timer — fetches ALL active symbols every 5s */
@@ -150,10 +150,9 @@ export class PriceBroadcaster implements OnModuleInit, OnModuleDestroy {
         const quote = this.latestQuotes.get(symbol);
         if (!quote) continue;
 
-        const lastEmittedTimestamp = this.lastBroadcastedQuotes.get(symbol);
-
-        // DELTA CHECK: Only broadcast if the quote has updated since our last flush
-        if (lastEmittedTimestamp === quote.timestamp) continue;
+        // DELTA CHECK: Only broadcast if quote or staleness has changed
+        const lastEntry = this.lastBroadcastedQuotes.get(symbol);
+        if (lastEntry === `${quote.timestamp}:${quote.staleness}`) continue;
 
         // Emit to the stock room using the shared event constant
         this.server.to(`stock:${symbol}`).emit(WS_EVENTS.STOCK_PRICE, {
@@ -167,10 +166,12 @@ export class PriceBroadcaster implements OnModuleInit, OnModuleDestroy {
           change: quote.change,
           changePercent: quote.changePercent,
           timestamp: quote.timestamp,
+          staleness: quote.staleness,
+          isMock: quote.isMock,
         });
 
         // Track what we just sent
-        this.lastBroadcastedQuotes.set(symbol, quote.timestamp);
+        this.lastBroadcastedQuotes.set(symbol, `${quote.timestamp}:${quote.staleness}`);
       }
     }, BROADCAST_INTERVAL_MS);
   }
@@ -189,6 +190,8 @@ export class PriceBroadcaster implements OnModuleInit, OnModuleDestroy {
       ltp: number;
       change: number;
       changePercent: number;
+      staleness?: string;
+      isMock?: boolean;
     }>;
   } {
     let lastSent = this.lastSentSnapshots.get(clientId);
@@ -204,6 +207,8 @@ export class PriceBroadcaster implements OnModuleInit, OnModuleDestroy {
       ltp: number;
       change: number;
       changePercent: number;
+      staleness?: string;
+      isMock?: boolean;
     }> = [];
 
     for (const symbol of symbols) {
@@ -211,16 +216,18 @@ export class PriceBroadcaster implements OnModuleInit, OnModuleDestroy {
       if (!quote) continue;
 
       const prev = lastSent.get(symbol);
-      if (!prev || prev.ltp !== quote.ltp) {
+      if (!prev || prev.ltp !== quote.ltp || prev.staleness !== quote.staleness) {
         changed.push({
           symbol: quote.symbol,
           ltp: quote.ltp,
           change: quote.change,
           changePercent: quote.changePercent,
+          staleness: quote.staleness,
+          isMock: quote.isMock,
         });
 
         // Update last-sent
-        lastSent.set(symbol, { ltp: quote.ltp, timestamp: quote.timestamp });
+        lastSent.set(symbol, { ltp: quote.ltp, timestamp: quote.timestamp, staleness: quote.staleness });
       }
     }
 
@@ -235,6 +242,8 @@ export class PriceBroadcaster implements OnModuleInit, OnModuleDestroy {
               ltp: q!.ltp,
               change: q!.change,
               changePercent: q!.changePercent,
+              staleness: q!.staleness,
+              isMock: q!.isMock,
             }))
         : changed,
     };

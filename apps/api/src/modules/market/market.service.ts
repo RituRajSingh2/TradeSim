@@ -1,19 +1,19 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../../redis/redis.service';
 import { PrismaService } from '../../database/prisma.service';
 import {
-  MARKET_DATA_PROVIDER,
-  type MarketDataProvider,
-  type StockQuote,
   type OHLCVBar,
 } from './market-data.provider';
+import { ProviderManager, ResilientStockQuote } from './provider-manager';
+import { Staleness } from '@tradesim/shared';
 
 // ============================================================
 // Market Service — Business logic + Redis caching layer
 // ============================================================
 
 const REDIS_PREFIX = 'market:';
-const QUOTE_TTL = 5; // seconds
+const CACHE_FRESH_TTL = 5; // seconds
+const CACHE_STALE_TTL = 900; // 15 minutes (stale-while-revalidate window)
 const OHLCV_INTRADAY_TTL = 10;
 const OHLCV_DAILY_TTL = 3600; // 1 hour
 const MARKET_STATUS_TTL = 60;
@@ -22,9 +22,10 @@ const MARKET_STATUS_TTL = 60;
 export class MarketService {
   private readonly logger = new Logger(MarketService.name);
 
+  private readonly pendingQuotes = new Map<string, Promise<ResilientStockQuote>>();
+
   constructor(
-    @Inject(MARKET_DATA_PROVIDER)
-    private readonly provider: MarketDataProvider,
+    private readonly provider: ProviderManager,
     private readonly redis: RedisService,
     private readonly prisma: PrismaService,
   ) {}
@@ -35,20 +36,57 @@ export class MarketService {
    * Get a single stock quote with Redis caching.
    * Cache TTL: 5s — matches Yahoo's update frequency.
    */
-  async getQuote(symbol: string): Promise<StockQuote> {
+  async getQuote(symbol: string): Promise<ResilientStockQuote> {
     const cacheKey = `${REDIS_PREFIX}quote:${symbol}`;
 
-    // Try cache first
-    const cached = await this.redis.getJson<StockQuote>(cacheKey);
-    if (cached) return cached;
+    // 1. Check Redis Cache
+    const cached = await this.redis.getJson<ResilientStockQuote & { fetchedAt: number }>(cacheKey);
+    if (cached) {
+      const ageSeconds = (Date.now() - cached.fetchedAt) / 1000;
+      let staleness: Staleness = 'fresh';
+      if (ageSeconds > 60) staleness = 'expired';
+      else if (ageSeconds > 30) staleness = 'critical';
+      else if (ageSeconds > 5) staleness = 'delayed';
 
-    // Cache miss — fetch from provider
-    const quote = await this.provider.getQuote(symbol);
+      if (staleness === 'fresh') {
+        return { ...cached, staleness };
+      }
+      
+      if (ageSeconds < CACHE_STALE_TTL) {
+        // Stale-While-Revalidate: Return stale immediately, trigger background fetch
+        this.fetchAndCacheQuote(symbol).catch(() => {});
+        return { ...cached, staleness };
+      }
+    }
 
-    // Cache with short TTL (fire-and-forget, don't await)
-    this.redis.setJson(cacheKey, quote, QUOTE_TTL).catch(() => {});
+    // 2. Coalescing: If a fetch is already in flight, await it
+    let pending = this.pendingQuotes.get(symbol);
+    if (pending) {
+      return pending;
+    }
 
-    return quote;
+    // 3. Fetch from Provider
+    pending = this.fetchAndCacheQuote(symbol);
+    this.pendingQuotes.set(symbol, pending);
+
+    try {
+      return await pending;
+    } finally {
+      this.pendingQuotes.delete(symbol);
+    }
+  }
+
+  private async fetchAndCacheQuote(symbol: string): Promise<ResilientStockQuote> {
+    try {
+      const quote = await this.provider.getQuote(symbol);
+      const cacheData = { ...quote, fetchedAt: Date.now() };
+      // Store in redis for the full stale window length
+      this.redis.setJson(`${REDIS_PREFIX}quote:${symbol}`, cacheData, CACHE_STALE_TTL).catch(() => {});
+      return { ...quote, staleness: 'fresh' as Staleness };
+    } catch (error) {
+      this.logger.warn(`Failed to fetch and cache quote for ${symbol}`);
+      throw error;
+    }
   }
 
   /**
@@ -59,31 +97,50 @@ export class MarketService {
    *
    * Checks Redis cache per-symbol, fetches misses in bulk.
    */
-  async getBulkQuotes(symbols: string[]): Promise<Map<string, StockQuote>> {
-    const results = new Map<string, StockQuote>();
+  async getBulkQuotes(symbols: string[]): Promise<Map<string, ResilientStockQuote>> {
+    const results = new Map<string, ResilientStockQuote>();
     const misses: string[] = [];
 
     // Check cache for each symbol
     for (const symbol of symbols) {
-      const cached = await this.redis.getJson<StockQuote>(
+      const cached = await this.redis.getJson<ResilientStockQuote & { fetchedAt: number }>(
         `${REDIS_PREFIX}quote:${symbol}`,
       );
       if (cached) {
-        results.set(symbol, cached);
+        const ageSeconds = (Date.now() - cached.fetchedAt) / 1000;
+        let staleness: Staleness = 'fresh';
+        if (ageSeconds > 60) staleness = 'expired';
+        else if (ageSeconds > 30) staleness = 'critical';
+        else if (ageSeconds > 5) staleness = 'delayed';
+
+        if (staleness === 'fresh') {
+          results.set(symbol, { ...cached, staleness });
+        } else if (ageSeconds < CACHE_STALE_TTL) {
+          results.set(symbol, { ...cached, staleness });
+          misses.push(symbol); // Needs background refresh
+        } else {
+          misses.push(symbol); // Too old, blocking fetch needed
+        }
       } else {
         misses.push(symbol);
       }
     }
 
-    // Fetch all cache misses from provider
+    // Fetch cache misses and background refreshes
+    // We don't coalesce bulk requests perfectly here, but we could individually check pendingQuotes.
+    // For simplicity, let's just fetch them via provider manager.
     if (misses.length > 0) {
-      const fetched = await this.provider.getBulkQuotes(misses);
-      for (const [symbol, quote] of fetched) {
-        results.set(symbol, quote);
-        // Cache each (fire-and-forget)
-        this.redis
-          .setJson(`${REDIS_PREFIX}quote:${symbol}`, quote, QUOTE_TTL)
-          .catch(() => {});
+      try {
+        const fetched = await this.provider.getBulkQuotes(misses);
+        for (const [symbol, quote] of fetched) {
+          results.set(symbol, { ...quote, staleness: 'fresh' as Staleness });
+          const cacheData = { ...quote, fetchedAt: Date.now() };
+          this.redis
+            .setJson(`${REDIS_PREFIX}quote:${symbol}`, cacheData, CACHE_STALE_TTL)
+            .catch(() => {});
+        }
+      } catch (error) {
+        this.logger.warn(`getBulkQuotes failed for ${misses.length} symbols.`);
       }
     }
 
@@ -200,7 +257,7 @@ export class MarketService {
    * Get top movers by absolute % change.
    * Fetches quotes for all active symbols and sorts.
    */
-  async getTrending(limit = 10): Promise<StockQuote[]> {
+  async getTrending(limit = 10): Promise<ResilientStockQuote[]> {
     const symbols = await this.prisma.marketSymbol.findMany({
       where: { isActive: true, instrumentType: 'EQUITY' },
       select: { symbol: true },

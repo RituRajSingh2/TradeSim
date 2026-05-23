@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { AuthProvider } from '@/providers/auth-provider';
+import { NetworkStatusBanner } from '@/components/layout/NetworkStatusBanner';
 import './globals.css';
 
 const inter = Inter({
@@ -62,6 +63,7 @@ export default function RootLayout({
     <html lang="en" className={inter.variable}>
       <body className="bg-bg-primary text-text-primary antialiased">
         <AuthProvider>
+          <NetworkStatusBanner />
           {children}
         </AuthProvider>
       </body>

@@ -11,6 +11,10 @@ export const TimeframeSchema = z.enum([
 ]);
 export type Timeframe = z.infer<typeof TimeframeSchema>;
 
+// ---- Staleness Tier ----
+export const StalenessSchema = z.enum(['fresh', 'delayed', 'critical', 'expired']);
+export type Staleness = z.infer<typeof StalenessSchema>;
+
 // ---- Stock Quote ----
 
 export const StockQuoteSchema = z.object({
@@ -24,8 +28,10 @@ export const StockQuoteSchema = z.object({
   previousClose: z.number(),
   volume: z.number().int(),
   change: z.number(),
-  changePercent: z.number(),
-  timestamp: z.number(),
+  changePercent: z.number().describe('Daily change percentage'),
+  timestamp: z.number().int().describe('Quote timestamp (UNIX ms)'),
+  staleness: StalenessSchema.optional().describe('Computed staleness tier based on quote age'),
+  isMock: z.boolean().optional().describe('Whether data is simulated via mock provider'),
 });
 export type StockQuote = z.infer<typeof StockQuoteSchema>;
 

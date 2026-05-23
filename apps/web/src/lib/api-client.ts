@@ -1,6 +1,8 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import type { ApiErrorResponse } from '@tradesim/shared';
 import { tokenService } from './token-service';
+import { logger } from './logger';
+import { PlatformEvent } from '@tradesim/shared';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
@@ -21,6 +23,9 @@ apiClient.interceptors.request.use(
     const token = tokenService.getAccessToken() as string | null;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    if (!config.headers['x-request-id']) {
+      config.headers['x-request-id'] = crypto.randomUUID();
     }
     return config;
   },
@@ -82,13 +87,24 @@ apiClient.interceptors.response.use(
       const newAccessToken = data.data.accessToken;
       (tokenService as { setAccessToken: (t: string) => void }).setAccessToken(newAccessToken);
 
+      logger.info({
+        eventType: PlatformEvent.WS_AUTH_REFRESH,
+        message: 'Successfully refreshed access token via API interceptor',
+      } as any);
+
       processQueue(null, newAccessToken);
 
       originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
       return apiClient(originalRequest);
-    } catch (refreshError) {
+    } catch (refreshError: any) {
       processQueue(refreshError, null);
       tokenService.clearTokens();
+
+      logger.error({
+        eventType: PlatformEvent.AUTH_FAILED,
+        message: 'Failed to refresh token, redirecting to login',
+        error: refreshError
+      });
 
       if (typeof window !== 'undefined') {
         window.location.href = '/login';
