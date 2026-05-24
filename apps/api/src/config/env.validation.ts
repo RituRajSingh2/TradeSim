@@ -7,6 +7,19 @@ enum Environment {
   Test = 'test',
 }
 
+// Weak/placeholder secrets that are explicitly rejected in production.
+const FORBIDDEN_SECRETS = [
+  'CHANGE_ME',
+  'CHANGE_ME_USE_OPENSSL_RAND_HEX_32',
+  'development_secret_key_123!',
+  'secret',
+  'password',
+  'changeme',
+  'your-secret-here',
+  'your_jwt_secret',
+  '',
+];
+
 class EnvironmentVariables {
   @IsEnum(Environment)
   @IsOptional()
@@ -77,10 +90,32 @@ class EnvironmentVariables {
 }
 
 /**
+ * In production, enforce that JWT secrets are:
+ *   - At least 32 characters long
+ *   - Not a known-weak placeholder value
+ */
+function validateSecretStrength(name: string, value: string | undefined): string | null {
+  if (!value) return `${name} is required but not set`;
+
+  const normalised = value.trim().toLowerCase();
+  for (const forbidden of FORBIDDEN_SECRETS) {
+    if (normalised === forbidden.toLowerCase()) {
+      return `${name} is a placeholder/weak value — generate a real secret: openssl rand -hex 32`;
+    }
+  }
+
+  if (value.length < 32) {
+    return `${name} must be at least 32 characters. Current length: ${value.length}`;
+  }
+
+  return null; // OK
+}
+
+/**
  * Validate environment variables using class-validator.
  *
  * In development: logs warnings for missing optional vars but allows startup.
- * In production: throws on any validation error.
+ * In production:  throws on any validation error OR weak secret.
  */
 export function validateEnv(config: Record<string, unknown>): Record<string, unknown> {
   const validated = plainToInstance(EnvironmentVariables, config, {
@@ -92,20 +127,43 @@ export function validateEnv(config: Record<string, unknown>): Record<string, unk
     whitelist: false,
   });
 
-  if (errors.length > 0) {
-    const formatted = errors
-      .map((err) => {
-        const constraints = err.constraints ? Object.values(err.constraints).join(', ') : '';
-        return `  - ${err.property}: ${constraints}`;
-      })
-      .join('\n');
+  const secretErrors: string[] = [];
+
+  // Production-only: enforce secret strength
+  if (config.NODE_ENV === 'production') {
+    const jwtErr = validateSecretStrength('JWT_SECRET', config.JWT_SECRET as string);
+    if (jwtErr) secretErrors.push(jwtErr);
+
+    const refreshErr = validateSecretStrength('JWT_REFRESH_SECRET', config.JWT_REFRESH_SECRET as string);
+    if (refreshErr) secretErrors.push(refreshErr);
+
+    // Confirm the two secrets are different (prevents key-reuse attacks)
+    if (
+      config.JWT_SECRET &&
+      config.JWT_REFRESH_SECRET &&
+      config.JWT_SECRET === config.JWT_REFRESH_SECRET
+    ) {
+      secretErrors.push('JWT_SECRET and JWT_REFRESH_SECRET must be different values');
+    }
+  }
+
+  const allErrors = [
+    ...errors.map((err) => {
+      const constraints = err.constraints ? Object.values(err.constraints).join(', ') : '';
+      return `  - ${err.property}: ${constraints}`;
+    }),
+    ...secretErrors.map((e) => `  - ${e}`),
+  ];
+
+  if (allErrors.length > 0) {
+    const formatted = allErrors.join('\n');
 
     if (config.NODE_ENV === 'production') {
       throw new Error(`Environment validation failed:\n${formatted}`);
     }
 
     // eslint-disable-next-line no-console
-    console.warn(`⚠️  Environment validation warnings (non-fatal in dev):\n${formatted}`);
+    console.warn(`\u26a0\ufe0f  Environment validation warnings (non-fatal in dev):\n${formatted}`);
   }
 
   return config;

@@ -4,7 +4,20 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**", "!dist/tsconfig.tsbuildinfo"]
+      "outputs": [
+        ".next/**",
+        "!.next/cache/**",
+        "dist/**",
+        "!dist/tsconfig.tsbuildinfo"
+      ]
+    },
+    "@tradesim/api#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "!dist/tsconfig.tsbuildinfo"]
+    },
+    "@tradesim/web#build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**"]
     },
     "typecheck": {
       "dependsOn": ["^build"],

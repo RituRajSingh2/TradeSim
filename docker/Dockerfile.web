@@ -56,6 +56,11 @@ ENV NEXT_PUBLIC_RAZORPAY_KEY_ID=$NEXT_PUBLIC_RAZORPAY_KEY_ID
 # Disable Next.js telemetry inside Docker
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Enable standalone output mode — only safe on Linux (Docker).
+# Windows blocks symlink creation for non-admin processes.
+# next.config.ts reads this flag to conditionally set output: 'standalone'.
+ENV NEXT_OUTPUT_STANDALONE=true
+
 RUN pnpm --filter @tradesim/web build
 
 

@@ -2,15 +2,20 @@ import type { NextConfig } from 'next';
 import path from 'path';
 
 const isDev = process.env.NODE_ENV !== 'production';
+// Only produce .next/standalone when building inside Docker/CI.
+// Linux (Docker) can create symlinks freely; Windows non-admin cannot.
+// Set NEXT_OUTPUT_STANDALONE=true in Dockerfile.web and CI env.
+const isStandaloneMode = process.env.NEXT_OUTPUT_STANDALONE === 'true';
 
 const nextConfig: NextConfig = {
-  // ── Standalone output ────────────────────────────────────
-  // Produces .next/standalone — a self-contained server with
-  // minimal node_modules. Required by Dockerfile.web stage 3.
-  output: 'standalone',
+  // .next/standalone — self-contained server with minimal node_modules.
+  // Only enabled in Docker/CI (Linux); disabled locally on Windows to
+  // avoid EPERM symlink errors. Controlled via NEXT_OUTPUT_STANDALONE=true.
+  ...(isStandaloneMode ? { output: 'standalone' as const } : {}),
 
-  // Ensure tracing captures node_modules hoisted to the monorepo root
-  outputFileTracingRoot: path.join(__dirname, '../../'),
+  // Ensure tracing captures node_modules hoisted to the monorepo root.
+  // Only relevant when standalone output is active.
+  ...(isStandaloneMode ? { outputFileTracingRoot: path.join(__dirname, '../../') } : {}),
 
   transpilePackages: ['@tradesim/shared'],
 

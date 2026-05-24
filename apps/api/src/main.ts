@@ -28,11 +28,40 @@ async function bootstrap() {
   const corsOrigin = configService.get<string>('cors.origin', 'http://localhost:3000');
   const nodeEnv = configService.get<string>('nodeEnv', 'development');
 
-  // ---- Security ----
+  // ---- Security (Helmet) ----
+  // In production, enforce strict CSP to reduce XSS attack surface.
+  // In development, CSP is disabled to allow HMR and devtools.
   app.use(
     helmet({
-      contentSecurityPolicy: nodeEnv === 'production' ? undefined : false,
+      contentSecurityPolicy: nodeEnv === 'production'
+        ? {
+            directives: {
+              defaultSrc:     ["'self'"],
+              scriptSrc:      ["'self'"],
+              styleSrc:       ["'self'", 'https://fonts.googleapis.com'],
+              fontSrc:        ["'self'", 'https://fonts.gstatic.com', 'data:'],
+              imgSrc:         ["'self'", 'data:', 'https:'],
+              connectSrc:     ["'self'", 'wss:', 'https:'],
+              frameSrc:       ["'none'"],
+              objectSrc:      ["'none'"],
+              baseUri:        ["'self'"],
+              formAction:     ["'self'"],
+              frameAncestors: ["'none'"],
+              upgradeInsecureRequests: [],
+            },
+          }
+        : false,
       crossOriginEmbedderPolicy: false,
+      // Strict transport security — only active in production
+      strictTransportSecurity: nodeEnv === 'production'
+        ? { maxAge: 63_072_000, includeSubDomains: true, preload: true }
+        : false,
+      // Prevent MIME-type sniffing
+      noSniff: true,
+      // Prevent clickjacking
+      frameguard: { action: 'deny' },
+      // Disable X-Powered-By
+      hidePoweredBy: true,
     }),
   );
 
