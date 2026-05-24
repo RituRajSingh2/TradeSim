@@ -50,6 +50,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.0.0",
     "@types/passport-jwt": "^4.0.1",
+    "eslint": "^10.4.0",
     "prisma": "^6.2.0",
     "rimraf": "^6.0.0",
     "source-map-support": "^0.5.21",
