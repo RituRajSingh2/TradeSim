@@ -8,6 +8,7 @@ interface WatchlistState {
   removeSymbol: (symbol: string) => void;
   addRecentSearch: (symbol: string) => void;
   clearRecentSearches: () => void;
+  initializeStarterWatchlistIfEmpty: () => void;
 }
 
 // Initial defaults for a beta user
@@ -44,6 +45,13 @@ export const useWatchlistStore = create<WatchlistState>()(
 
       clearRecentSearches: () => {
         set({ recentSearches: [] });
+      },
+
+      initializeStarterWatchlistIfEmpty: () => {
+        const { symbols } = get();
+        if (symbols.length === 0) {
+          set({ symbols: DEFAULT_SYMBOLS });
+        }
       },
     }),
     {

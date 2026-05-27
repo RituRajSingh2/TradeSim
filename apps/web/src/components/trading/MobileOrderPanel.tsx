@@ -4,15 +4,19 @@ import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useStockPrice } from '@/lib/websocket/use-stock-price';
 import { usePortfolioStore } from '@/stores/portfolio-store';
+import { useAuthStore } from '@/stores/auth-store';
 import { apiPost } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import type { OrderSide, PlaceOrderRequest } from '@tradesim/shared';
 import { formatCurrency } from '@tradesim/shared';
 
 export function MobileOrderPanel({ symbol }: { symbol: string }) {
   const { quote } = useStockPrice(symbol);
   const { executeOrderOptimistically, getEffectiveBuyingPower, getEffectiveHoldingQuantity } = usePortfolioStore();
+  const { isAuthenticated } = useAuthStore();
+  const router = useRouter();
 
   const [side, setSide] = useState<OrderSide>('BUY');
   const [quantity, setQuantity] = useState<string>('');
@@ -34,6 +38,10 @@ export function MobileOrderPanel({ symbol }: { symbol: string }) {
   const isInvalidQty = numQty <= 0;
 
   const handleReviewClick = () => {
+    if (!isAuthenticated) {
+      router.push('/login?returnTo=/trade/' + symbol);
+      return;
+    }
     if (isInvalidQty || hasInsufficientFunds || hasInsufficientHoldings || lastPrice <= 0) return;
     setShowReview(true);
   };
@@ -109,14 +117,14 @@ export function MobileOrderPanel({ symbol }: { symbol: string }) {
 
         <button
           onClick={handleReviewClick}
-          disabled={isInvalidQty || hasInsufficientFunds || hasInsufficientHoldings || lastPrice <= 0}
+          disabled={(isInvalidQty || hasInsufficientFunds || hasInsufficientHoldings || lastPrice <= 0) && isAuthenticated}
           className={cn(
             "w-full h-12 rounded-lg font-bold text-bg-primary transition-colors flex items-center justify-center text-[15px]",
-            side === 'BUY' ? "bg-positive active:bg-positive/80" : "bg-negative active:bg-negative/80",
+            !isAuthenticated ? "bg-accent active:bg-accent-hover" : (side === 'BUY' ? "bg-positive active:bg-positive/80" : "bg-negative active:bg-negative/80"),
             "disabled:opacity-40 disabled:bg-bg-tertiary disabled:text-text-muted"
           )}
         >
-          {side === 'BUY' ? 'Review Buy Order' : 'Review Sell Order'}
+          {!isAuthenticated ? 'Login to Trade' : (side === 'BUY' ? 'Review Buy Order' : 'Review Sell Order')}
         </button>
       </div>
 

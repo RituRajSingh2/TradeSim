@@ -12,6 +12,8 @@ import { useAuthStore } from '@/stores/auth-store';
 import { apiGet, apiPost } from '@/lib/api-client';
 import { tokenService } from '@/lib/token-service';
 import type { User } from '@tradesim/shared';
+import { useWatchlistStore } from '@/stores/watchlist-store';
+import { Logo } from '@/components/ui/logo';
 
 interface AuthContextValue {
   user: User | null;
@@ -103,6 +105,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           response.accessToken,
         );
 
+        if (response.user.isNewUser) {
+          useWatchlistStore.getState().initializeStarterWatchlistIfEmpty();
+        }
+
         // Fetch full user profile
         const fullUser = await apiGet<User>('/auth/me');
         setUser(fullUser);
@@ -127,7 +133,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{ user, isAuthenticated, isLoading, login, logout }}
     >
-      {children}
+      {isLoading ? (
+        <div className="flex min-h-dvh items-center justify-center bg-bg-primary animate-pulse">
+          <Logo size="lg" />
+        </div>
+      ) : (
+        children
+      )}
     </AuthContext.Provider>
   );
 }
