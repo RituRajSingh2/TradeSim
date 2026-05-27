@@ -171,27 +171,45 @@ export class MarketService {
    * Search MarketSymbol table. Falls back to provider for unknown symbols.
    */
   async searchSymbols(query: string, limit = 10) {
-    const results = await this.prisma.marketSymbol.findMany({
-      where: {
-        isActive: true,
-        OR: [
-          { symbol: { contains: query.toUpperCase(), mode: 'insensitive' } },
-          { companyName: { contains: query, mode: 'insensitive' } },
-        ],
-      },
-      take: limit,
-      orderBy: { symbol: 'asc' },
-      select: {
-        id: true,
-        symbol: true,
-        companyName: true,
-        exchange: true,
-        instrumentType: true,
-        sector: true,
-      },
-    });
+    if (!query || query.trim().length === 0) return [];
+    const q = query.trim();
+    const qUpper = q.toUpperCase();
 
-    return results;
+    // Run three priority tiers in parallel, merge and deduplicate
+    const [exactSymbol, prefixSymbol, nameContains] = await Promise.all([
+      // Tier 1: exact symbol match
+      this.prisma.marketSymbol.findMany({
+        where: { isActive: true, symbol: { equals: qUpper } },
+        take: 3,
+        select: { id: true, symbol: true, companyName: true, exchange: true, instrumentType: true, sector: true },
+      }),
+      // Tier 2: prefix symbol match
+      this.prisma.marketSymbol.findMany({
+        where: { isActive: true, symbol: { startsWith: qUpper } },
+        take: limit,
+        orderBy: { symbol: 'asc' },
+        select: { id: true, symbol: true, companyName: true, exchange: true, instrumentType: true, sector: true },
+      }),
+      // Tier 3: company name contains query
+      this.prisma.marketSymbol.findMany({
+        where: { isActive: true, companyName: { contains: q, mode: 'insensitive' } },
+        take: limit,
+        orderBy: { symbol: 'asc' },
+        select: { id: true, symbol: true, companyName: true, exchange: true, instrumentType: true, sector: true },
+      }),
+    ]);
+
+    // Merge with deduplication, preserving priority order
+    const seen = new Set<string>();
+    const merged: typeof exactSymbol = [];
+    for (const row of [...exactSymbol, ...prefixSymbol, ...nameContains]) {
+      if (!seen.has(row.id)) {
+        seen.add(row.id);
+        merged.push(row);
+      }
+    }
+
+    return merged.slice(0, limit);
   }
 
   // ---- Market Status ----

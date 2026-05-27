@@ -1,10 +1,20 @@
 import { create } from 'zustand';
 import type { WsPortfolioUpdatePayload, PlaceOrderRequest, OrderSide } from '@tradesim/shared';
 
+export interface OptimisticTransaction {
+  idempotencyKey: string;
+  side: OrderSide;
+  symbol: string;
+  quantity: number;
+  price: number;
+  createdAt: string;
+}
+
 export interface OptimisticDelta {
   pendingBuyingPowerDeduction: number;
   pendingHoldingDeductions: Record<string, number>; // symbol -> quantity
   pendingIdempotencyKeys: Set<string>;
+  pendingTransactions: OptimisticTransaction[];
 }
 
 export interface PortfolioState {
@@ -27,6 +37,7 @@ export interface PortfolioState {
     submitOrderFn: (payload: PlaceOrderRequest) => Promise<any>
   ) => Promise<void>;
   clearPendingOrder: (idempotencyKey: string) => void;
+  clearPendingTransactions: () => void;
 }
 
 export const usePortfolioStore = create<PortfolioState>((set, get) => ({
@@ -37,6 +48,7 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
     pendingBuyingPowerDeduction: 0,
     pendingHoldingDeductions: {},
     pendingIdempotencyKeys: new Set(),
+    pendingTransactions: [],
   },
 
   getEffectiveBuyingPower: () => {
@@ -73,6 +85,7 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
         pendingBuyingPowerDeduction: 0,
         pendingHoldingDeductions: {},
         pendingIdempotencyKeys: new Set(),
+        pendingTransactions: optimisticDelta.pendingTransactions, // Preserve transactions!
       }
     });
   },
@@ -120,6 +133,19 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
       newKeys.add(idempotencyKey);
       newDelta.pendingIdempotencyKeys = newKeys;
 
+      // Add optimistic transaction
+      newDelta.pendingTransactions = [
+        {
+          idempotencyKey,
+          side,
+          symbol,
+          quantity,
+          price: lastPrice,
+          createdAt: new Date().toISOString(),
+        },
+        ...newDelta.pendingTransactions,
+      ];
+
       return { optimisticDelta: newDelta };
     });
 
@@ -148,6 +174,10 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
         const newKeys = new Set(newDelta.pendingIdempotencyKeys);
         newKeys.delete(idempotencyKey);
         newDelta.pendingIdempotencyKeys = newKeys;
+        
+        newDelta.pendingTransactions = newDelta.pendingTransactions.filter(
+          (tx) => tx.idempotencyKey !== idempotencyKey
+        );
 
         return { optimisticDelta: newDelta };
       });
@@ -166,5 +196,14 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
         } 
       };
     });
+  },
+
+  clearPendingTransactions: () => {
+    set((state) => ({
+      optimisticDelta: {
+        ...state.optimisticDelta,
+        pendingTransactions: [],
+      }
+    }));
   }
 }));
