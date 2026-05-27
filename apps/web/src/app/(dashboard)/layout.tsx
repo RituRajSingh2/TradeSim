@@ -1,5 +1,6 @@
 import { DashboardShell } from '@/components/layout/DashboardShell';
 import { DashboardHeader } from '@/components/layout/DashboardHeader';
+import { BottomNav } from '@/components/layout/bottom-nav';
 
 export default function DashboardLayout({
   children,
@@ -9,8 +10,10 @@ export default function DashboardLayout({
   return (
     <DashboardShell>
       <DashboardHeader />
-      {/* We no longer have a bottom nav fixed globally, mobile navigation will be part of the grid/shell later */}
-      {children}
+      <div className="flex-1 overflow-y-auto pb-16 lg:pb-0">
+        {children}
+      </div>
+      <BottomNav />
     </DashboardShell>
   );
 }
