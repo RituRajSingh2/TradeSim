@@ -10,7 +10,10 @@
 
 import { formatCurrency } from '@tradesim/shared';
 import { clsx } from 'clsx';
-import { Clock } from 'lucide-react';
+import { Clock, Share } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { shareElementAsImage } from '@/lib/share';
+import { PortfolioShareCard } from '../share/PortfolioShareCard';
 
 interface PortfolioMemoryProps {
   totalValue: number;
@@ -21,12 +24,40 @@ interface PortfolioMemoryProps {
 export function PortfolioMemory({ totalValue, dayPnl, dayPnlPercent }: PortfolioMemoryProps) {
   const yesterdayClose = totalValue - dayPnl;
   const isPositive = dayPnl >= 0;
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [isSharing, setIsSharing] = useState(false);
+
+  const handleShare = async () => {
+    if (!cardRef.current || isSharing) return;
+    setIsSharing(true);
+    try {
+      await shareElementAsImage(cardRef.current, {
+        fileName: 'portfolio-snapshot.png',
+        shareTitle: 'My Weekly Summary',
+        shareText: 'Check out my portfolio performance on TradeSim.',
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSharing(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-3 py-3 mt-1 border-t border-border-subtle bg-bg-primary/30 -mx-4 px-4 rounded-b-xl">
-      <div className="flex items-center gap-1.5 text-xs font-medium text-text-secondary uppercase tracking-widest">
-        <Clock className="w-3.5 h-3.5 opacity-70" />
-        <span>Portfolio Memory</span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-text-secondary uppercase tracking-widest">
+          <Clock className="w-3.5 h-3.5 opacity-70" />
+          <span>Portfolio Memory</span>
+        </div>
+        <button 
+          onClick={handleShare} 
+          disabled={isSharing}
+          className="flex items-center gap-1 text-[10px] uppercase font-bold text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-50"
+        >
+          <Share className="w-3 h-3" />
+          {isSharing ? 'Exporting...' : 'Share'}
+        </button>
       </div>
       
       <div className="flex items-center justify-between">
@@ -54,6 +85,16 @@ export function PortfolioMemory({ totalValue, dayPnl, dayPnlPercent }: Portfolio
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Hidden Offscreen Export Card */}
+      <div className="absolute top-0 left-0 -z-50 opacity-0 pointer-events-none">
+        <PortfolioShareCard 
+          ref={cardRef} 
+          totalValue={totalValue} 
+          dayPnl={dayPnl} 
+          dayPnlPercent={dayPnlPercent} 
+        />
       </div>
     </div>
   );

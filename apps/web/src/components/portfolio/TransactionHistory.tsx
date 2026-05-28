@@ -6,7 +6,10 @@ import { usePortfolioStore } from '@/stores/portfolio-store';
 import type { LedgerEntry, PaginatedResponse } from '@tradesim/shared';
 import { formatCurrency } from '@tradesim/shared';
 import { clsx } from 'clsx';
-import { History, Loader2 } from 'lucide-react';
+import { History, Loader2, Share } from 'lucide-react';
+import { useRef } from 'react';
+import { shareElementAsImage } from '@/lib/share';
+import { TradeShareCard } from '../share/TradeShareCard';
 
 type TransactionRow = {
   id: string;
@@ -22,6 +25,10 @@ export function TransactionHistory() {
   const [serverTransactions, setServerTransactions] = useState<LedgerEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [shareTarget, setShareTarget] = useState<TransactionRow | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
+  const shareCardRef = useRef<HTMLDivElement>(null);
 
   const { optimisticDelta, clearPendingTransactions } = usePortfolioStore();
   const { pendingTransactions } = optimisticDelta;
@@ -62,6 +69,34 @@ export function TransactionHistory() {
       clearInterval(interval);
     };
   }, [clearPendingTransactions]);
+
+  const handleShareTrade = async (tx: TransactionRow) => {
+    if (isSharing) return;
+    
+    // Set target so the offscreen card updates
+    setShareTarget(tx);
+    setIsSharing(true);
+
+    // Give React a tick to render the updated data into the ref
+    setTimeout(async () => {
+      if (!shareCardRef.current) {
+        setIsSharing(false);
+        return;
+      }
+      try {
+        await shareElementAsImage(shareCardRef.current, {
+          fileName: `tradesim-trade-${tx.symbol}.png`,
+          shareTitle: 'My Trade Execution',
+          shareText: `Just executed a trade for ${tx.symbol} on TradeSim!`,
+        });
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setIsSharing(false);
+        setShareTarget(null);
+      }
+    }, 100);
+  };
 
   // Merge optimistic and server transactions
   // Remove any server transaction that shares an idempotencyKey with a pending one (rare)
@@ -114,6 +149,20 @@ export function TransactionHistory() {
         <History className="h-4 w-4" /> Recent Activity
       </h2>
       
+      {/* Hidden Offscreen Trade Export Card */}
+      <div className="absolute top-0 left-0 -z-50 opacity-0 pointer-events-none">
+        {shareTarget && (
+          <TradeShareCard
+            ref={shareCardRef}
+            symbol={shareTarget.symbol}
+            side={shareTarget.side}
+            quantity={shareTarget.quantity}
+            price={shareTarget.price}
+            totalValue={shareTarget.price * shareTarget.quantity}
+          />
+        )}
+      </div>
+
       <div className="flex flex-col bg-bg-card rounded-xl border border-border-subtle overflow-hidden">
         {merged.map((tx, idx) => {
           const dateObj = new Date(tx.createdAt);
@@ -146,13 +195,31 @@ export function TransactionHistory() {
                 </span>
               </div>
 
-              <div className="flex flex-col items-end gap-0.5">
-                <span className="text-sm font-semibold text-text-primary tabular-nums tracking-tight">
-                  {formatCurrency(tx.price * tx.quantity)}
-                </span>
-                <span className="text-[11px] text-text-secondary tabular-nums">
-                  {tx.quantity} Qty @ {formatCurrency(tx.price)}
-                </span>
+              <div className="flex items-center gap-3">
+                <div className="flex flex-col items-end gap-0.5">
+                  <span className="text-sm font-semibold text-text-primary tabular-nums tracking-tight">
+                    {formatCurrency(tx.price * tx.quantity)}
+                  </span>
+                  <span className="text-[11px] text-text-secondary tabular-nums">
+                    {tx.quantity} Qty @ {formatCurrency(tx.price)}
+                  </span>
+                </div>
+                
+                {/* Share Button (only for completed trades) */}
+                {!tx.isOptimistic && (
+                  <button 
+                    onClick={() => handleShareTrade(tx)}
+                    disabled={isSharing}
+                    className="p-1.5 rounded-md text-text-tertiary hover:bg-bg-tertiary hover:text-text-primary transition-colors disabled:opacity-50"
+                    title="Share this trade"
+                  >
+                    {isSharing && shareTarget?.id === tx.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Share className="w-4 h-4" />
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           );
