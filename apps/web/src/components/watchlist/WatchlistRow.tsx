@@ -8,6 +8,7 @@ import { formatCurrency } from '@tradesim/shared';
 import { cn, pnlColor } from '@/lib/utils';
 import { TrendingUp, TrendingDown, X } from 'lucide-react';
 import { useWatchlistStore } from '@/stores/watchlist-store';
+import { Sparkline } from './Sparkline';
 
 export interface WatchlistRowProps {
   symbol: string;
@@ -36,33 +37,36 @@ const WatchlistRowComponent = ({ symbol, index }: WatchlistRowProps) => {
         isStale && "opacity-50 grayscale transition-opacity"
       )}
     >
-      <Link href={`/trade/${symbol}`} className="flex-1 flex items-center justify-between outline-none">
-        {/* Symbol & Name info */}
-        <div className="flex flex-col">
-          <span className="font-semibold text-text-primary tracking-tight text-base">
+      <Link href={`/trade/${symbol}`} className="flex-1 flex items-center justify-between outline-none overflow-hidden">
+        
+        {/* Symbol Info (Left) */}
+        <div className="flex flex-col flex-1 min-w-0 pr-4">
+          <span className="font-semibold text-text-primary tracking-tight text-[15px] truncate">
             {symbol}
           </span>
-          <span className="text-xs text-text-tertiary mt-0.5">
+          <span className="text-[11px] font-medium text-text-tertiary mt-0.5">
             NSE
           </span>
         </div>
 
-        {/* Realtime Price */}
-        <div className="flex flex-col items-end mr-3">
-          <span className="font-medium text-text-primary text-base">
+        {/* Sparkline (Center-Right) */}
+        <div className="flex-shrink-0 mr-4 opacity-80">
+          <Sparkline symbol={symbol} isPositive={isPositive} width={48} height={20} />
+        </div>
+
+        {/* Realtime Price & P&L (Right) */}
+        <div className="flex flex-col items-end mr-2 w-[90px] shrink-0">
+          <span className="font-financial font-medium text-text-primary text-[15px] tabular-nums tracking-tight">
             {ltp > 0 ? formatCurrency(ltp) : '--'}
           </span>
-          <div className={cn("flex items-center gap-1 text-xs mt-0.5 font-medium", pnlColor(change))}>
+          <div className={cn("flex items-center justify-end gap-1 text-[11px] font-financial font-medium mt-0.5 tabular-nums", pnlColor(change))}>
             {isPositive ? (
-              <TrendingUp className="h-3 w-3" />
+              <TrendingUp className="h-3 w-3 shrink-0" />
             ) : (
-              <TrendingDown className="h-3 w-3" />
+              <TrendingDown className="h-3 w-3 shrink-0" />
             )}
-            <span>
-              {change > 0 ? '+' : ''}{formatCurrency(Math.abs(change))}
-            </span>
-            <span>
-              ({change > 0 ? '+' : ''}{changePercent.toFixed(2)}%)
+            <span className="truncate">
+              {change > 0 ? '+' : ''}{changePercent.toFixed(2)}%
             </span>
           </div>
         </div>

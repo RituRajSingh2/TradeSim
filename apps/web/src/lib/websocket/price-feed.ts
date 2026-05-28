@@ -1,7 +1,7 @@
 import { WsStockPricePayload, WsWatchlistPricesPayload, Staleness, getWorstStaleness } from '@tradesim/shared';
 import { socketManager } from '../socket-client';
 import { useMarketHealthStore } from '@/stores/market-health-store';
-
+import { useTickHistoryStore } from '@/stores/tick-history-store';
 export interface PriceFeedData {
   quote?: WsStockPricePayload;
   version: number;
@@ -25,11 +25,13 @@ class PriceFeed {
   private incrementVersion(symbol: string, newData: WsStockPricePayload) {
     const existing = this.cache.get(symbol);
     
-    // Simple deduplication/stale check based on timestamp or identical ltp/volume if needed
-    // For now, if we get a payload, we update. In reality we might check `existing.quote.timestamp < newData.timestamp`
-    
     const newVersion = existing ? existing.version + 1 : 1;
     this.cache.set(symbol, { quote: newData, version: newVersion });
+    
+    // Feed the central sparkline ring buffer
+    if (newData.ltp > 0) {
+      useTickHistoryStore.getState().addTick(symbol, newData.ltp);
+    }
     
     this.enforceCacheLimit();
     this.updateGlobalHealth();

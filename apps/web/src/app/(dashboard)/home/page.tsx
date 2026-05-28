@@ -5,6 +5,7 @@ import { formatCurrency } from '@tradesim/shared';
 import { SymbolSearch } from '@/components/watchlist/SymbolSearch';
 import { Watchlist } from '@/components/watchlist/Watchlist';
 import { MarketStatusIndicator } from '@/components/trading/MarketStatusIndicator';
+import { MarketMovers } from '@/components/watchlist/MarketMovers';
 
 export const metadata: Metadata = {
   title: 'Dashboard',
@@ -39,7 +40,10 @@ export default function HomePage() {
         </Card>
       </div>
 
-      {/* 2. Search Bar */}
+      {/* 2. Market Movers Discovery */}
+      <MarketMovers />
+
+      {/* 3. Search Bar */}
       <div className="px-4 pb-2 sticky top-0 z-40 bg-bg-primary/95 backdrop-blur-md pt-2">
         <SymbolSearch />
       </div>
