@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { formatCurrency } from '@tradesim/shared';
 import { SymbolSearch } from '@/components/watchlist/SymbolSearch';
 import { Watchlist } from '@/components/watchlist/Watchlist';
+import { MarketStatusIndicator } from '@/components/trading/MarketStatusIndicator';
 
 export const metadata: Metadata = {
   title: 'Dashboard',
@@ -19,6 +20,9 @@ export default function HomePage() {
     <div className="flex flex-col w-full min-h-full">
       {/* 1. Portfolio Summary Card */}
       <div className="px-4 pt-6 pb-4">
+        <div className="mb-4">
+          <MarketStatusIndicator />
+        </div>
         <Card variant="elevated" padding="lg" className="bg-bg-card border-border-subtle shadow-sm">
           <div className="mb-1 text-sm text-text-secondary font-medium">Portfolio Value</div>
           <div className="flex items-baseline gap-3">

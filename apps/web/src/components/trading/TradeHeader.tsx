@@ -6,6 +6,7 @@ import { formatCurrency } from '@tradesim/shared';
 import { cn, pnlColor } from '@/lib/utils';
 import { ArrowLeft, TrendingUp, TrendingDown } from 'lucide-react';
 import Link from 'next/link';
+import { MarketStatusIndicator } from './MarketStatusIndicator';
 
 export function TradeHeader({ symbol }: { symbol: string }) {
   const { quote, isStale } = useStockPrice(symbol);
@@ -16,18 +17,21 @@ export function TradeHeader({ symbol }: { symbol: string }) {
   const isPositive = change >= 0;
 
   return (
-    <header className="sticky top-0 z-40 bg-bg-primary border-b border-border-subtle px-4 h-14 flex items-center justify-between">
+    <header className="sticky top-0 z-40 bg-bg-primary border-b border-border-subtle px-4 h-16 flex items-center justify-between">
       <div className="flex items-center gap-3">
         <Link href="/home" className="p-1 -ml-1 text-text-secondary hover:text-text-primary active:scale-95 transition-all">
           <ArrowLeft className="h-6 w-6" />
         </Link>
-        <div className="flex flex-col">
-          <h1 className="font-bold text-text-primary text-base leading-tight tracking-tight uppercase">
-            {symbol}
-          </h1>
-          <span className="text-[10px] font-medium text-text-tertiary leading-none">
-            NSE EQ
-          </span>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <h1 className="font-bold text-text-primary text-base leading-none tracking-tight uppercase">
+              {symbol}
+            </h1>
+            <span className="text-[10px] font-medium text-text-tertiary leading-none bg-bg-secondary px-1 rounded">
+              NSE
+            </span>
+          </div>
+          <MarketStatusIndicator />
         </div>
       </div>
 
