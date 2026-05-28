@@ -4,11 +4,14 @@ import React from 'react';
 import { useStockPrice } from '@/lib/websocket/use-stock-price';
 import { formatCurrency } from '@tradesim/shared';
 import { cn, pnlColor } from '@/lib/utils';
-import { ArrowLeft, TrendingUp, TrendingDown } from 'lucide-react';
+import { ArrowLeft, TrendingUp, TrendingDown, Bell } from 'lucide-react';
 import Link from 'next/link';
 import { MarketStatusIndicator } from './MarketStatusIndicator';
+import { NotificationCenter } from '../notifications/NotificationCenter';
+import { CreateAlertDialog } from '../alerts/CreateAlertDialog';
 
 export function TradeHeader({ symbol }: { symbol: string }) {
+  const [isAlertModalOpen, setIsAlertModalOpen] = React.useState(false);
   const { quote, isStale } = useStockPrice(symbol);
   
   const ltp = quote?.ltp ?? 0;
@@ -47,6 +50,23 @@ export function TradeHeader({ symbol }: { symbol: string }) {
           <span>{change > 0 ? '+' : ''}{changePercent.toFixed(2)}%</span>
         </div>
       </div>
+      
+      <div className="flex items-center gap-2 pl-3 ml-2 border-l border-border-subtle">
+        <button 
+          onClick={() => setIsAlertModalOpen(true)}
+          className="p-2 rounded-full hover:bg-white/5 transition-colors focus:outline-none"
+        >
+          <Bell className="w-5 h-5 text-gray-400 hover:text-text-primary" />
+        </button>
+        <NotificationCenter />
+      </div>
+
+      <CreateAlertDialog 
+        symbol={symbol}
+        ltp={ltp}
+        isOpen={isAlertModalOpen}
+        onClose={() => setIsAlertModalOpen(false)}
+      />
     </header>
   );
 }

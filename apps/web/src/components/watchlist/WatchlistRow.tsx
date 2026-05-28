@@ -6,9 +6,10 @@ import { useStockPrice } from '@/lib/websocket/use-stock-price';
 import { useVisibilitySubscription } from '@/lib/websocket/use-visibility-subscription';
 import { formatCurrency } from '@tradesim/shared';
 import { cn, pnlColor } from '@/lib/utils';
-import { TrendingUp, TrendingDown, X } from 'lucide-react';
+import { TrendingUp, TrendingDown, X, Bell } from 'lucide-react';
 import { useWatchlistStore } from '@/stores/watchlist-store';
 import { Sparkline } from './Sparkline';
+import { CreateAlertDialog } from '../alerts/CreateAlertDialog';
 
 export interface WatchlistRowProps {
   symbol: string;
@@ -23,6 +24,7 @@ const WatchlistRowComponent = ({ symbol, index }: WatchlistRowProps) => {
 
   const { quote, isStale } = useStockPrice(isVisible ? symbol : null);
   const removeSymbol = useWatchlistStore((state) => state.removeSymbol);
+  const [isAlertModalOpen, setIsAlertModalOpen] = React.useState(false);
 
   const ltp = quote?.ltp ?? 0;
   const change = quote?.change ?? 0;
@@ -72,14 +74,30 @@ const WatchlistRowComponent = ({ symbol, index }: WatchlistRowProps) => {
         </div>
       </Link>
       
-      {/* Remove Action (Tap friendly) */}
-      <button 
-        onClick={() => removeSymbol(symbol)}
-        className="p-2 ml-1 rounded-md text-text-muted hover:bg-bg-card hover:text-text-primary active:scale-95 transition-all flex items-center justify-center shrink-0 min-h-[44px] min-w-[44px]"
-        aria-label={`Remove ${symbol}`}
-      >
-        <X className="h-4 w-4" />
-      </button>
+      {/* Actions */}
+      <div className="flex items-center shrink-0">
+        <button 
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsAlertModalOpen(true); }}
+          className="p-2 rounded-md text-text-muted hover:bg-bg-card hover:text-text-primary active:scale-95 transition-all flex items-center justify-center min-h-[44px] min-w-[44px]"
+          aria-label={`Alert for ${symbol}`}
+        >
+          <Bell className="h-4 w-4" />
+        </button>
+        <button 
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeSymbol(symbol); }}
+          className="p-2 ml-1 rounded-md text-text-muted hover:bg-bg-card hover:text-text-primary active:scale-95 transition-all flex items-center justify-center min-h-[44px] min-w-[44px]"
+          aria-label={`Remove ${symbol}`}
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <CreateAlertDialog 
+        symbol={symbol}
+        ltp={ltp}
+        isOpen={isAlertModalOpen}
+        onClose={() => setIsAlertModalOpen(false)}
+      />
     </div>
   );
 };

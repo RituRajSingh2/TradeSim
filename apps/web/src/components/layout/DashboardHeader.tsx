@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils';
-import { Activity, Settings, User, Bell } from 'lucide-react';
+import { Activity, Settings, User } from 'lucide-react';
+import { NotificationCenter } from '../notifications/NotificationCenter';
 
 export function DashboardHeader({ className }: { className?: string }) {
   return (
@@ -20,9 +21,7 @@ export function DashboardHeader({ className }: { className?: string }) {
       </div>
 
       <div className="flex items-center gap-4 text-text-secondary">
-        <button className="hover:text-text-primary transition-colors">
-          <Bell className="h-5 w-5" />
-        </button>
+        <NotificationCenter />
         <button className="hover:text-text-primary transition-colors">
           <Settings className="h-5 w-5" />
         </button>

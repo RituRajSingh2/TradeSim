@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { DatabaseModule } from './database/database.module';
 import { RedisModule } from './redis/redis.module';
 import { HealthModule } from './modules/health/health.module';
@@ -14,6 +15,7 @@ import { PortfolioModule } from './modules/portfolio/portfolio.module';
 import { WebsocketModule } from './modules/websocket/websocket.module';
 import { LeaderboardModule } from './modules/leaderboard/leaderboard.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { AlertsModule } from './modules/alerts/alerts.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
@@ -59,6 +61,7 @@ import { validateEnv } from './config/env.validation';
     LoggerModule,
     DatabaseModule,
     RedisModule,
+    EventEmitterModule.forRoot(),
 
     // ---- Feature Modules ----
     HealthModule,
@@ -68,6 +71,7 @@ import { validateEnv } from './config/env.validation';
     PortfolioModule,
     WebsocketModule,
     AdminModule,
+    AlertsModule,
 
     // Future modules:
     // WatchlistModule,

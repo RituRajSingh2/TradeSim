@@ -123,6 +123,8 @@ model User {
   payments               Payment[]
   sessions               Session[]
   portfolioDailySnapshots PortfolioDailySnapshot[]
+  priceAlerts            PriceAlert[]
+  notifications          Notification[]
 
   @@index([phone])
   @@index([deletedAt])
@@ -471,4 +473,52 @@ model PortfolioDailySnapshot {
   @@index([snapshotDate(sort: Desc), totalPnlPercent(sort: Desc)])
   @@index([userId, snapshotDate(sort: Desc)])
   @@map("portfolio_daily_snapshots")
+}
+
+// ============================================================
+// ALERTS & NOTIFICATIONS
+// ============================================================
+
+enum AlertCondition {
+  ABOVE
+  BELOW
+}
+
+enum AlertStatus {
+  ACTIVE
+  TRIGGERED
+  CANCELLED
+}
+
+model PriceAlert {
+  id          String         @id @default(uuid())
+  userId      String         @map("user_id")
+  symbol      String
+  targetPrice Decimal        @map("target_price") @db.Decimal(14, 4)
+  condition   AlertCondition
+  status      AlertStatus    @default(ACTIVE)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  triggeredAt DateTime?      @map("triggered_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([symbol, status])
+  @@index([userId, status])
+  @@map("price_alerts")
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  title       String
+  message     String
+  type        String   @default("ALERT") // "ALERT", "SYSTEM", "ORDER"
+  isRead      Boolean  @default(false) @map("is_read")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("notifications")
 }

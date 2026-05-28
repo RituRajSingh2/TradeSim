@@ -4,6 +4,7 @@ import { MarketService } from '../market/market.service';
 import { SubscriptionManager } from './subscription-manager';
 import type { ResilientStockQuote } from '../market/provider-manager';
 import { WS_EVENTS } from '@tradesim/shared';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 // ============================================================
 // Price Broadcaster — Polls prices & broadcasts to subscribers
@@ -46,6 +47,7 @@ export class PriceBroadcaster implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly marketService: MarketService,
     private readonly subscriptions: SubscriptionManager,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   onModuleInit() {
@@ -168,6 +170,14 @@ export class PriceBroadcaster implements OnModuleInit, OnModuleDestroy {
           timestamp: quote.timestamp,
           staleness: quote.staleness,
           isMock: quote.isMock,
+        });
+
+        // Emit local event for decoupled sub-systems (like Alerts)
+        this.eventEmitter.emit('market.price.tick', {
+          symbol: quote.symbol,
+          ltp: quote.ltp,
+          isMock: quote.isMock,
+          staleness: quote.staleness,
         });
 
         // Track what we just sent

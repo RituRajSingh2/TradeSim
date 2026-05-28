@@ -178,6 +178,41 @@ export interface MarketStatus {
   nextCloseAt: string | null;
 }
 
+export interface MarketSessionResponse {
+  status: 'PREOPEN' | 'OPEN' | 'CLOSED' | 'WEEKEND';
+  nextTransitionAt: string | null;
+  serverTime: string;
+}
+
+// ============================================================
+// ALERTS & NOTIFICATIONS
+// ============================================================
+
+export type AlertCondition = 'ABOVE' | 'BELOW';
+export type AlertStatus = 'ACTIVE' | 'TRIGGERED' | 'CANCELLED';
+
+export interface PriceAlert {
+  id: string;
+  userId: string;
+  symbol: string;
+  targetPrice: number | string;
+  condition: AlertCondition;
+  status: AlertStatus;
+  createdAt: string;
+  triggeredAt?: string | null;
+}
+
+export interface NotificationDto {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: string;
+  isRead: boolean;
+  metadata?: any;
+  createdAt: string;
+}
+
 // ---- Watchlist ----
 
 export interface Watchlist {
