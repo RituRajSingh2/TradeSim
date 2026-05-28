@@ -6,6 +6,7 @@ import { SymbolSearch } from '@/components/watchlist/SymbolSearch';
 import { Watchlist } from '@/components/watchlist/Watchlist';
 import { MarketStatusIndicator } from '@/components/trading/MarketStatusIndicator';
 import { MarketMovers } from '@/components/watchlist/MarketMovers';
+import { MarketRhythmBanner } from '@/components/market/MarketRhythmBanner';
 
 export const metadata: Metadata = {
   title: 'Dashboard',
@@ -23,6 +24,9 @@ export default function HomePage() {
       <div className="px-4 pt-6 pb-4">
         <div className="mb-4">
           <MarketStatusIndicator />
+        </div>
+        <div className="mb-4 min-h-[46px]">
+          <MarketRhythmBanner portfolioDayPnlPercent={dayPnlPercent} />
         </div>
         <Card variant="elevated" padding="lg" className="bg-bg-card border-border-subtle shadow-sm">
           <div className="mb-1 text-sm text-text-secondary font-medium">Portfolio Value</div>

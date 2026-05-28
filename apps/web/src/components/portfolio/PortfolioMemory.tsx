@@ -1,0 +1,60 @@
+'use client';
+
+/**
+ * PortfolioMemory
+ * 
+ * A calm, financially grounded surface that anchors the user to their
+ * previous day's close. Emphasizes continuity over excitement.
+ * No gamification, no dopamine spikes.
+ */
+
+import { formatCurrency } from '@tradesim/shared';
+import { clsx } from 'clsx';
+import { Clock } from 'lucide-react';
+
+interface PortfolioMemoryProps {
+  totalValue: number;
+  dayPnl: number;
+  dayPnlPercent: number;
+}
+
+export function PortfolioMemory({ totalValue, dayPnl, dayPnlPercent }: PortfolioMemoryProps) {
+  const yesterdayClose = totalValue - dayPnl;
+  const isPositive = dayPnl >= 0;
+
+  return (
+    <div className="flex flex-col gap-3 py-3 mt-1 border-t border-border-subtle bg-bg-primary/30 -mx-4 px-4 rounded-b-xl">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-text-secondary uppercase tracking-widest">
+        <Clock className="w-3.5 h-3.5 opacity-70" />
+        <span>Portfolio Memory</span>
+      </div>
+      
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col">
+          <span className="text-[11px] text-text-tertiary">Yesterday's Close</span>
+          <span className="text-sm font-medium text-text-secondary tabular-nums tracking-tight">
+            {formatCurrency(yesterdayClose)}
+          </span>
+        </div>
+
+        <div className="flex flex-col items-end">
+          <span className="text-[11px] text-text-tertiary">Today vs Yesterday</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className={clsx(
+              "text-sm font-semibold tabular-nums tracking-tight transition-colors duration-300",
+              isPositive ? "text-emerald-500/90" : "text-rose-500/90"
+            )}>
+              {isPositive ? '+' : ''}{formatCurrency(dayPnl)}
+            </span>
+            <span className={clsx(
+              "text-xs font-medium tabular-nums",
+              isPositive ? "text-emerald-500/70" : "text-rose-500/70"
+            )}>
+              ({isPositive ? '+' : ''}{dayPnlPercent.toFixed(2)}%)
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

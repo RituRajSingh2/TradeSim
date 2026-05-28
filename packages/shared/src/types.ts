@@ -204,14 +204,20 @@ export interface PriceAlert {
 
 export interface NotificationDto {
   id: string;
-  userId: string;
   title: string;
   message: string;
-  type: string;
+  type: 'ALERT' | 'SYSTEM' | 'ORDER';
   isRead: boolean;
-  metadata?: any;
+  metadata?: Record<string, any>;
   createdAt: string;
 }
+
+export interface NotificationPreferences {
+  marketOpen: boolean;
+  eodSummary: boolean;
+  watchlistAlerts: boolean;
+}
+
 
 // ---- Watchlist ----
 

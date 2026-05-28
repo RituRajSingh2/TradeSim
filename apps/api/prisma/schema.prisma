@@ -110,6 +110,7 @@ model User {
   firebaseUid  String?   @unique @map("firebase_uid")
   lastLoginAt  DateTime? @map("last_login_at")
   deletedAt    DateTime? @map("deleted_at")
+  notificationPreferences Json? @map("notification_preferences")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
@@ -125,6 +126,7 @@ model User {
   portfolioDailySnapshots PortfolioDailySnapshot[]
   priceAlerts            PriceAlert[]
   notifications          Notification[]
+  portfolioSnapshots     PortfolioSnapshot[]
 
   @@index([phone])
   @@index([deletedAt])
@@ -521,4 +523,20 @@ model Notification {
   
   @@index([userId, createdAt(sort: Desc)])
   @@map("notifications")
+}
+
+model PortfolioSnapshot {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  date            DateTime @db.Date // Store the specific day of the snapshot
+  totalValue      Decimal  @map("total_value") @db.Decimal(14, 4)
+  dailyPnl        Decimal  @map("daily_pnl") @db.Decimal(14, 4)
+  dailyPnlPercent Decimal  @map("daily_pnl_percent") @db.Decimal(8, 4)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date]) // One snapshot per user per day
+  @@index([date])
+  @@map("portfolio_snapshots")
 }

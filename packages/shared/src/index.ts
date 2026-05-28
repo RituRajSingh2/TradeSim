@@ -22,6 +22,7 @@ export type {
   AlertStatus,
   PriceAlert,
   NotificationDto,
+  NotificationPreferences,
 } from './types';
 
 // Constants

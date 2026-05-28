@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { formatCurrency } from '@tradesim/shared';
 import type { WsPortfolioUpdatePayload } from '@tradesim/shared';
 import { clsx } from 'clsx';
+import { PortfolioMemory } from './PortfolioMemory';
 
 interface PortfolioOverviewProps {
   portfolio: WsPortfolioUpdatePayload;
@@ -64,6 +65,12 @@ export function PortfolioOverview({ portfolio, getEffectiveBuyingPower }: Portfo
           </span>
         </div>
       </div>
+
+      <PortfolioMemory 
+        totalValue={totalValue} 
+        dayPnl={portfolio.dayPnl} 
+        dayPnlPercent={portfolio.dayPnlPercent} 
+      />
     </Card>
   );
 }
