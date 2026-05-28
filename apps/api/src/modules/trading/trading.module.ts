@@ -2,9 +2,10 @@ import { Module } from '@nestjs/common';
 import { TradingController } from './trading.controller';
 import { TradingService } from './trading.service';
 import { MarketModule } from '../market/market.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
 
 @Module({
-  imports: [MarketModule],
+  imports: [MarketModule, AnalyticsModule],
   controllers: [TradingController],
   providers: [TradingService],
   exports: [TradingService],

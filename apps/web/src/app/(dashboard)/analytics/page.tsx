@@ -1,15 +1,15 @@
 import { Metadata } from 'next';
-import { AnalyticsDashboard } from '@/components/analytics/AnalyticsDashboard';
+import { TradeAnalyticsDashboard } from '@/components/analytics/TradeAnalyticsDashboard';
 
 export const metadata: Metadata = {
-  title: 'Analytics | TradeSim',
-  description: 'Track your trading performance and portfolio equity curve.',
+  title: 'Trade Review | TradeSim',
+  description: 'Review your trading performance, closed trades, and portfolio analytics.',
 };
 
 export default function AnalyticsPage() {
   return (
     <div className="p-[var(--spacing-page)] pb-24 h-full overflow-y-auto custom-scrollbar">
-      <AnalyticsDashboard />
+      <TradeAnalyticsDashboard />
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { LedgerRepository } from '../../database/ledger.repository';
 import { MarketService } from '../market/market.service';
 import { Prisma } from '@prisma/client';
 import { PlatformEvent } from '@tradesim/shared';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 // ============================================================
 // Trading Service — Order Execution Engine
@@ -31,6 +32,7 @@ export class TradingService {
     private readonly locking: LockingRepository,
     private readonly ledger: LedgerRepository,
     private readonly marketService: MarketService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   /**
@@ -486,6 +488,22 @@ export class TradingService {
           },
         });
       }
+
+      // Record Trade Exit in Analytics (Atomic)
+      const now = new Date();
+      await this.analyticsService.recordTradeExit(tx, {
+        userId,
+        symbolId: marketSymbol.id,
+        symbol,
+        entryPrice: Number(holding.avgBuyPrice),
+        exitPrice: price,
+        quantity,
+        realizedPnl: partialPnl,
+        holdingDurationMinutes: Math.max(1, Math.floor((now.getTime() - holding.createdAt.getTime()) / 60000)),
+        openedAt: holding.createdAt,
+        closedAt: now,
+        idempotencyKey: `exit_${order.id}`,
+      });
 
       // 7. Update portfolio
       const currentInvested = Number(portfolio.investedValue);

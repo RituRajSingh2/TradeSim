@@ -127,6 +127,9 @@ model User {
   priceAlerts            PriceAlert[]
   notifications          Notification[]
   portfolioSnapshots     PortfolioSnapshot[]
+  tradeReviews           TradeReview[]
+  userAnalyticsSummary   UserAnalyticsSummary?
+  analyticsSnapshots     AnalyticsSnapshot[]
 
   @@index([phone])
   @@index([deletedAt])
@@ -539,4 +542,83 @@ model PortfolioSnapshot {
   @@unique([userId, date]) // One snapshot per user per day
   @@index([date])
   @@map("portfolio_snapshots")
+}
+
+// ============================================================
+// ANALYTICS & LEARNING LOOP
+// ============================================================
+
+model TradeReview {
+  id              String   @id @default(uuid())
+  idempotencyKey  String   @unique @map("idempotency_key")
+  userId          String   @map("user_id")
+  symbolId        String   @map("symbol_id")
+  symbol          String
+  entryPrice      Decimal  @db.Decimal(14, 4)
+  exitPrice       Decimal  @db.Decimal(14, 4)
+  quantity        Int
+  realizedPnl     Decimal  @map("realized_pnl") @db.Decimal(14, 2)
+  holdingDuration Int      @map("holding_duration") // minutes
+  openedAt        DateTime @map("opened_at")
+  closedAt        DateTime @map("closed_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, closedAt(sort: Desc)])
+  @@map("trade_reviews")
+}
+
+model UserAnalyticsSummary {
+  userId                 String   @id
+  analyticsVersion       Int      @default(1) @map("analytics_version") 
+  
+  totalTrades            Int      @default(0) @map("total_trades")
+  winningTrades          Int      @default(0) @map("winning_trades")
+  realizedPnl            Decimal  @default(0) @map("realized_pnl") @db.Decimal(14, 2)
+  
+  bestTradeSymbol        String?  @map("best_trade_symbol")
+  bestTradePnl           Decimal? @map("best_trade_pnl") @db.Decimal(14, 2)
+  worstTradeSymbol       String?  @map("worst_trade_symbol")
+  worstTradePnl          Decimal? @map("worst_trade_pnl") @db.Decimal(14, 2)
+  
+  totalHoldingDuration   Int      @default(0) @map("total_holding_duration")
+  
+  allocationBreakdown    Json?    @map("allocation_breakdown")
+  
+  lastUpdated            DateTime @default(now()) @map("last_updated")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@map("user_analytics_summaries")
+}
+
+model AnalyticsSnapshot {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  date            DateTime @db.Date 
+  realizedPnl     Decimal  @map("realized_pnl") @db.Decimal(14, 2)
+  totalTrades     Int      @map("total_trades")
+  winRate         Decimal  @map("win_rate") @db.Decimal(5, 2)
+  portfolioValue  Decimal  @map("portfolio_value") @db.Decimal(14, 2)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, date])
+  @@index([userId, date(sort: Desc)])
+  @@map("analytics_snapshots")
+}
+
+model AnalyticsDriftEvent {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  mismatchType     String   @map("mismatch_type")
+  repairedFields   Json     @map("repaired_fields")
+  beforeValues     Json     @map("before_values")
+  afterValues      Json     @map("after_values")
+  analyticsVersion Int      @map("analytics_version")
+  timestamp        DateTime @default(now())
+
+  @@index([userId, timestamp(sort: Desc)])
+  @@map("analytics_drift_events")
 }

@@ -17,6 +17,7 @@ import { LeaderboardModule } from './modules/leaderboard/leaderboard.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { AlertsModule } from './modules/alerts/alerts.module';
 import { RetentionModule } from './modules/retention/retention.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
@@ -74,6 +75,7 @@ import { validateEnv } from './config/env.validation';
     AdminModule,
     AlertsModule,
     RetentionModule,
+    AnalyticsModule,
 
     // Future modules:
     // WatchlistModule,
