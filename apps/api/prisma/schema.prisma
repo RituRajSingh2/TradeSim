@@ -98,38 +98,39 @@ enum PaymentStatus {
 
 /// Core user identity. Soft-deleted for regulatory audit retention.
 model User {
-  id           String    @id @default(uuid())
-  phone        String    @unique
-  name         String?
-  avatarUrl    String?   @map("avatar_url")
-  referralCode String    @unique @map("referral_code")
-  state        String?
-  city         String?
-  isActive     Boolean   @default(true) @map("is_active")
-  role         UserRole  @default(USER)
-  firebaseUid  String?   @unique @map("firebase_uid")
-  lastLoginAt  DateTime? @map("last_login_at")
-  deletedAt    DateTime? @map("deleted_at")
-  notificationPreferences Json? @map("notification_preferences")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  id                      String    @id @default(uuid())
+  phone                   String    @unique
+  name                    String?
+  avatarUrl               String?   @map("avatar_url")
+  referralCode            String    @unique @map("referral_code")
+  state                   String?
+  city                    String?
+  isActive                Boolean   @default(true) @map("is_active")
+  role                    UserRole  @default(USER)
+  firebaseUid             String?   @unique @map("firebase_uid")
+  lastLoginAt             DateTime? @map("last_login_at")
+  deletedAt               DateTime? @map("deleted_at")
+  notificationPreferences Json?     @map("notification_preferences")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
 
   // Relations
-  portfolio              Portfolio?
-  orders                 Order[]
-  ledgerEntries          LedgerEntry[]
-  watchlists             Watchlist[]
-  referralsMade          Referral[]               @relation("ReferralsMade")
-  referralsReceived      Referral?                @relation("ReferralsReceived")
-  payments               Payment[]
-  sessions               Session[]
+  portfolio               Portfolio?
+  orders                  Order[]
+  ledgerEntries           LedgerEntry[]
+  watchlists              Watchlist[]
+  referralsMade           Referral[]               @relation("ReferralsMade")
+  referralsReceived       Referral?                @relation("ReferralsReceived")
+  payments                Payment[]
+  sessions                Session[]
   portfolioDailySnapshots PortfolioDailySnapshot[]
-  priceAlerts            PriceAlert[]
-  notifications          Notification[]
-  portfolioSnapshots     PortfolioSnapshot[]
-  tradeReviews           TradeReview[]
-  userAnalyticsSummary   UserAnalyticsSummary?
-  analyticsSnapshots     AnalyticsSnapshot[]
+  priceAlerts             PriceAlert[]
+  notifications           Notification[]
+  portfolioSnapshots      PortfolioSnapshot[]
+  tradeReviews            TradeReview[]
+  userAnalyticsSummary    UserAnalyticsSummary?
+  analyticsSnapshots      AnalyticsSnapshot[]
+  insightHistories        InsightHistory[]
 
   @@index([phone])
   @@index([deletedAt])
@@ -192,15 +193,15 @@ model MarketSymbol {
 
 /// Cache freshness tracking for market data.
 model MarketCacheMetadata {
-  id           String   @id @default(uuid())
-  cacheKey     String   @unique @map("cache_key")
-  lastFetched  DateTime @map("last_fetched")
-  ttlSeconds   Int      @map("ttl_seconds")
-  source       String
-  hitCount     Int      @default(0) @map("hit_count")
-  lastHitAt    DateTime? @map("last_hit_at")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id          String    @id @default(uuid())
+  cacheKey    String    @unique @map("cache_key")
+  lastFetched DateTime  @map("last_fetched")
+  ttlSeconds  Int       @map("ttl_seconds")
+  source      String
+  hitCount    Int       @default(0) @map("hit_count")
+  lastHitAt   DateTime? @map("last_hit_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   @@index([cacheKey])
   @@map("market_cache_metadata")
@@ -238,21 +239,21 @@ model Portfolio {
 /// Uses symbolId FK for integrity + denormalized symbol/companyName for reads.
 /// closedAt != null means position is fully sold (quantity = 0).
 model Holding {
-  id            String    @id @default(uuid())
-  portfolioId   String    @map("portfolio_id")
-  symbolId      String    @map("symbol_id")
-  symbol        String
-  companyName   String    @map("company_name")
-  exchange      Exchange  @default(NSE)
-  quantity      Int
-  avgBuyPrice   Decimal   @map("avg_buy_price") @db.Decimal(14, 4)
-  totalBuyValue Decimal   @map("total_buy_value") @db.Decimal(14, 2)
-  closedAt      DateTime? @map("closed_at")
-  realizedPnl   Decimal?  @map("realized_pnl") @db.Decimal(14, 2)
-  totalExitValue Decimal? @map("total_exit_value") @db.Decimal(14, 2)
-  holdingDuration Int?    @map("holding_duration")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  id              String    @id @default(uuid())
+  portfolioId     String    @map("portfolio_id")
+  symbolId        String    @map("symbol_id")
+  symbol          String
+  companyName     String    @map("company_name")
+  exchange        Exchange  @default(NSE)
+  quantity        Int
+  avgBuyPrice     Decimal   @map("avg_buy_price") @db.Decimal(14, 4)
+  totalBuyValue   Decimal   @map("total_buy_value") @db.Decimal(14, 2)
+  closedAt        DateTime? @map("closed_at")
+  realizedPnl     Decimal?  @map("realized_pnl") @db.Decimal(14, 2)
+  totalExitValue  Decimal?  @map("total_exit_value") @db.Decimal(14, 2)
+  holdingDuration Int?      @map("holding_duration")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   portfolio    Portfolio    @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
   marketSymbol MarketSymbol @relation(fields: [symbolId], references: [id])
@@ -335,16 +336,16 @@ model LedgerEntry {
   // Caller generates a deterministic key (e.g. "buy_order_{orderId}")
   // before the DB transaction. If a retry creates a second entry with
   // the same key, the unique constraint rejects it.
-  idempotencyKey String?        @unique @map("idempotency_key")
+  idempotencyKey String? @unique @map("idempotency_key")
 
   // Correlation — exactly one should be set per business operation
-  orderId        String?        @map("order_id")
-  paymentId      String?        @map("payment_id")
-  referralId     String?        @map("referral_id")
+  orderId    String? @map("order_id")
+  paymentId  String? @map("payment_id")
+  referralId String? @map("referral_id")
 
-  description    String
-  metadata       Json?
-  createdAt      DateTime       @default(now()) @map("created_at")
+  description String
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
 
   // Relations
   user     User      @relation(fields: [userId], references: [id])
@@ -368,11 +369,11 @@ model LedgerEntry {
 // ============================================================
 
 model Watchlist {
-  id        String          @id @default(uuid())
-  userId    String          @map("user_id")
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
   name      String
-  createdAt DateTime        @default(now()) @map("created_at")
-  updatedAt DateTime        @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   items WatchlistItem[]
@@ -422,15 +423,15 @@ model Referral {
 // ============================================================
 
 model Payment {
-  id                 String        @id @default(uuid())
-  userId             String        @map("user_id")
-  razorpayOrderId    String        @unique @map("razorpay_order_id")
-  razorpayPaymentId  String?       @map("razorpay_payment_id")
-  amount             Decimal       @db.Decimal(10, 2)
-  currency           String        @default("INR")
-  status             PaymentStatus @default(CREATED)
-  createdAt          DateTime      @default(now()) @map("created_at")
-  updatedAt          DateTime      @updatedAt @map("updated_at")
+  id                String        @id @default(uuid())
+  userId            String        @map("user_id")
+  razorpayOrderId   String        @unique @map("razorpay_order_id")
+  razorpayPaymentId String?       @map("razorpay_payment_id")
+  amount            Decimal       @db.Decimal(10, 2)
+  currency          String        @default("INR")
+  status            PaymentStatus @default(CREATED)
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
 
   user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   ledgerEntries LedgerEntry[]
@@ -447,28 +448,28 @@ model Payment {
 /// Immutable after creation — used for leaderboard ranking and P&L history charts.
 /// Created by EOD CRON job at market close (3:45 PM IST).
 model PortfolioDailySnapshot {
-  id              String   @id @default(uuid())
-  userId          String   @map("user_id")
-  snapshotDate    DateTime @map("snapshot_date") @db.Date
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  snapshotDate DateTime @map("snapshot_date") @db.Date
 
   // Frozen portfolio values at EOD
-  balance         Decimal  @db.Decimal(14, 2)
-  investedValue   Decimal  @map("invested_value") @db.Decimal(14, 2)
-  currentValue    Decimal  @map("current_value") @db.Decimal(14, 2)
-  totalPnl        Decimal  @map("total_pnl") @db.Decimal(14, 2)
-  totalPnlPercent Decimal  @map("total_pnl_percent") @db.Decimal(10, 4)
-  dayPnl          Decimal  @map("day_pnl") @db.Decimal(14, 2)
-  dayPnlPercent   Decimal  @map("day_pnl_percent") @db.Decimal(10, 4)
+  balance         Decimal @db.Decimal(14, 2)
+  investedValue   Decimal @map("invested_value") @db.Decimal(14, 2)
+  currentValue    Decimal @map("current_value") @db.Decimal(14, 2)
+  totalPnl        Decimal @map("total_pnl") @db.Decimal(14, 2)
+  totalPnlPercent Decimal @map("total_pnl_percent") @db.Decimal(10, 4)
+  dayPnl          Decimal @map("day_pnl") @db.Decimal(14, 2)
+  dayPnlPercent   Decimal @map("day_pnl_percent") @db.Decimal(10, 4)
 
   // Trading metrics for leaderboard
-  totalTrades     Int      @default(0) @map("total_trades")
-  winningTrades   Int      @default(0) @map("winning_trades")
-  winRate         Decimal  @default(0) @map("win_rate") @db.Decimal(5, 2)
+  totalTrades   Int     @default(0) @map("total_trades")
+  winningTrades Int     @default(0) @map("winning_trades")
+  winRate       Decimal @default(0) @map("win_rate") @db.Decimal(5, 2)
 
   // Frozen holdings at EOD (JSON blob — not queried, only displayed)
-  holdingsSnapshot Json?   @map("holdings_snapshot")
+  holdingsSnapshot Json? @map("holdings_snapshot")
 
-  createdAt       DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id])
 
@@ -506,24 +507,24 @@ model PriceAlert {
   triggeredAt DateTime?      @map("triggered_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   @@index([symbol, status])
   @@index([userId, status])
   @@map("price_alerts")
 }
 
 model Notification {
-  id          String   @id @default(uuid())
-  userId      String   @map("user_id")
-  title       String
-  message     String
-  type        String   @default("ALERT") // "ALERT", "SYSTEM", "ORDER"
-  isRead      Boolean  @default(false) @map("is_read")
-  metadata    Json?
-  createdAt   DateTime @default(now()) @map("created_at")
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  title     String
+  message   String
+  type      String   @default("ALERT") // "ALERT", "SYSTEM", "ORDER"
+  isRead    Boolean  @default(false) @map("is_read")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   @@index([userId, createdAt(sort: Desc)])
   @@map("notifications")
 }
@@ -564,46 +565,47 @@ model TradeReview {
   createdAt       DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   @@index([userId, closedAt(sort: Desc)])
   @@map("trade_reviews")
 }
 
 model UserAnalyticsSummary {
-  userId                 String   @id
-  analyticsVersion       Int      @default(1) @map("analytics_version") 
-  
-  totalTrades            Int      @default(0) @map("total_trades")
-  winningTrades          Int      @default(0) @map("winning_trades")
-  realizedPnl            Decimal  @default(0) @map("realized_pnl") @db.Decimal(14, 2)
-  
-  bestTradeSymbol        String?  @map("best_trade_symbol")
-  bestTradePnl           Decimal? @map("best_trade_pnl") @db.Decimal(14, 2)
-  worstTradeSymbol       String?  @map("worst_trade_symbol")
-  worstTradePnl          Decimal? @map("worst_trade_pnl") @db.Decimal(14, 2)
-  
-  totalHoldingDuration   Int      @default(0) @map("total_holding_duration")
-  
-  allocationBreakdown    Json?    @map("allocation_breakdown")
-  
-  lastUpdated            DateTime @default(now()) @map("last_updated")
+  userId           String @id
+  analyticsVersion Int    @default(1) @map("analytics_version")
+
+  totalTrades   Int     @default(0) @map("total_trades")
+  winningTrades Int     @default(0) @map("winning_trades")
+  realizedPnl   Decimal @default(0) @map("realized_pnl") @db.Decimal(14, 2)
+
+  bestTradeSymbol  String?  @map("best_trade_symbol")
+  bestTradePnl     Decimal? @map("best_trade_pnl") @db.Decimal(14, 2)
+  worstTradeSymbol String?  @map("worst_trade_symbol")
+  worstTradePnl    Decimal? @map("worst_trade_pnl") @db.Decimal(14, 2)
+
+  totalHoldingDuration Int @default(0) @map("total_holding_duration")
+
+  allocationBreakdown Json? @map("allocation_breakdown")
+
+  lastUpdated DateTime @default(now()) @map("last_updated")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@map("user_analytics_summaries")
 }
 
 model AnalyticsSnapshot {
-  id              String   @id @default(uuid())
-  userId          String   @map("user_id")
-  date            DateTime @db.Date 
-  realizedPnl     Decimal  @map("realized_pnl") @db.Decimal(14, 2)
-  totalTrades     Int      @map("total_trades")
-  winRate         Decimal  @map("win_rate") @db.Decimal(5, 2)
-  portfolioValue  Decimal  @map("portfolio_value") @db.Decimal(14, 2)
-  createdAt       DateTime @default(now()) @map("created_at")
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  date           DateTime @db.Date
+  realizedPnl    Decimal  @map("realized_pnl") @db.Decimal(14, 2)
+  totalTrades    Int      @map("total_trades")
+  winRate        Decimal  @map("win_rate") @db.Decimal(5, 2)
+  portfolioValue Decimal  @map("portfolio_value") @db.Decimal(14, 2)
+  createdAt      DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   @@unique([userId, date])
   @@index([userId, date(sort: Desc)])
   @@map("analytics_snapshots")
@@ -621,4 +623,21 @@ model AnalyticsDriftEvent {
 
   @@index([userId, timestamp(sort: Desc)])
   @@map("analytics_drift_events")
+}
+
+model InsightHistory {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  insightId       String    @map("insight_id")
+  entityKey       String    @map("entity_key")
+  hash            String
+  consecutiveHits Int       @default(1) @map("consecutive_hits")
+  lastShownAt     DateTime  @default(now()) @map("last_shown_at")
+  suppressedUntil DateTime? @map("suppressed_until")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, insightId, entityKey])
+  @@index([userId])
+  @@map("insight_histories")
 }
